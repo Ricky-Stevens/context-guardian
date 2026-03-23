@@ -11,21 +11,25 @@ Distributed as a **Claude Code plugin** — one command to install, zero configu
 ## Install
 
 ```bash
-claude plugin install context-guardian
+claude plugin install --source github Ricky-Stevens/context-guardian
 ```
 
 That's it. Works immediately on your next Claude Code session.
 
-### From npm
+### Update
 
-```bash
-claude plugin install --source npm context-guardian
-```
-
-### From GitHub
+To pull the latest version, re-run the install command:
 
 ```bash
 claude plugin install --source github Ricky-Stevens/context-guardian
+```
+
+This overwrites the existing installation. Then start a new Claude Code session to pick up the changes.
+
+### Uninstall
+
+```bash
+claude plugin uninstall context-guardian
 ```
 
 ### Local development
@@ -404,19 +408,16 @@ Log entries include token counts, threshold checks, menu interactions, checkpoin
 
 **Plugin not loading:**
 - Ensure Claude Code v1.0.33+ (plugin system requirement)
-- Try: `claude plugin uninstall context-guardian && claude plugin install context-guardian`
+- Try: `claude plugin uninstall context-guardian && claude plugin install --source github Ricky-Stevens/context-guardian`
 
 ---
 
-## Uninstall
+## Clean Uninstall
+
+To remove the plugin and all saved data:
 
 ```bash
 claude plugin uninstall context-guardian
-```
-
-To also remove saved data:
-
-```bash
 rm -rf ~/.claude/plugins/data/context-guardian
 rm ~/.claude/logs/context-guardian.log
 ```
