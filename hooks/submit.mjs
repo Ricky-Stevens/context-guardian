@@ -3,8 +3,8 @@ import fs from 'fs';
 import path from 'path';
 
 import {
-  DATA_DIR, STATE_FILE, RELOAD_FILE, RESUME_FILE, CHECKPOINTS_DIR, COOLDOWN_FILE,
-  sessionFlags, ensureDataDir,
+  DATA_DIR, STATE_FILE, CHECKPOINTS_DIR,
+  projectStateFiles, sessionFlags, ensureDataDir,
 } from '../lib/paths.mjs';
 import { log }                            from '../lib/logger.mjs';
 import { loadConfig, resolveMaxTokens }   from '../lib/config.mjs';
@@ -15,11 +15,17 @@ import { formatCompactionStats }          from '../lib/stats.mjs';
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
-const raw   = fs.readFileSync(0, 'utf8');
-const input = JSON.parse(raw);
+let input;
+try {
+  input = JSON.parse(fs.readFileSync(0, 'utf8'));
+} catch (e) {
+  process.stderr.write(`context-guardian: failed to parse stdin: ${e.message}\n`);
+  process.exit(0);
+}
 const { session_id, prompt, transcript_path } = input;
 
 const flags = sessionFlags(input.cwd, session_id);
+const pState = projectStateFiles(input.cwd);
 
 function output(obj) { process.stdout.write(JSON.stringify(obj)); }
 
@@ -28,13 +34,22 @@ function output(obj) { process.stdout.write(JSON.stringify(obj)); }
 // ---------------------------------------------------------------------------
 if (fs.existsSync(flags.compactMenu)) {
   const compactChoice = (prompt || '').trim();
+  if (compactChoice === '0' || compactChoice.toLowerCase() === 'cancel') {
+    fs.unlinkSync(flags.compactMenu);
+    log(`compact-menu-cancel session=${session_id}`);
+    output({
+      decision: 'block',
+      reason: `Compaction cancelled.`,
+    });
+    process.exit(0);
+  }
   if (['1', '2'].includes(compactChoice)) {
     fs.unlinkSync(flags.compactMenu);
 
     ensureDataDir();
     fs.mkdirSync(CHECKPOINTS_DIR, { recursive: true });
     const cStamp      = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const cExportFile = path.join(CHECKPOINTS_DIR, `session-${cStamp}.md`);
+    const cExportFile = path.join(CHECKPOINTS_DIR, `session-${cStamp}-${session_id.slice(0, 8)}.md`);
 
     const cMode  = compactChoice === '1' ? 'smart' : 'recent';
     const cLabel = compactChoice === '1' ? 'Smart Compact' : 'Keep Recent 20';
@@ -69,13 +84,13 @@ if (fs.existsSync(flags.compactMenu)) {
     });
 
     // Cooldown — prevent re-trigger for 2 minutes after compaction
-    try { fs.writeFileSync(COOLDOWN_FILE, JSON.stringify({ ts: Date.now() })); } catch {}
+    try { fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() })); } catch {}
   } else {
     // Invalid choice — re-show compact menu
     log(`compact-menu-invalid choice="${compactChoice}" session=${session_id}`);
     output({
       decision: 'block',
-      reason: `"${compactChoice}" is not a valid option. Please reply with 1 or 2.\n\n  1  Smart Compact     full history, strip tool noise\n  2  Keep Recent       last 20 messages only`,
+      reason: `"${compactChoice}" is not a valid option. Please reply with 1, 2, or 0 to cancel.\n\n  1  Smart Compact     full history, strip tool noise\n  2  Keep Recent       last 20 messages only\n  0  Cancel`,
     });
   }
   process.exit(0);
@@ -86,6 +101,23 @@ if (fs.existsSync(flags.compactMenu)) {
 // ---------------------------------------------------------------------------
 if (fs.existsSync(flags.menu)) {
   const choice = (prompt || '').trim();
+  if (choice === '0' || choice.toLowerCase() === 'cancel') {
+    fs.unlinkSync(flags.menu);
+    let originalPrompt = '';
+    try { originalPrompt = fs.readFileSync(flags.prompt, 'utf8'); } catch {}
+    try { fs.unlinkSync(flags.prompt); } catch {}
+    try { fs.unlinkSync(flags.warned); } catch {}
+    try { fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() })); } catch {}
+    log(`menu-cancel session=${session_id}`);
+    output({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext:
+          `The user dismissed the context warning. Their original message was:\n\n${originalPrompt}\n\nRespond to that message now.`,
+      },
+    });
+    process.exit(0);
+  }
   if (['1', '2', '3', '4'].includes(choice)) {
     fs.unlinkSync(flags.menu);
     let originalPrompt = '';
@@ -172,7 +204,7 @@ if (fs.existsSync(flags.menu)) {
     log(`menu-invalid choice="${choice}" session=${session_id}`);
     output({
       decision: 'block',
-      reason: `"${choice}" is not a valid option. Please reply with 1, 2, 3, or 4.\n\n  1  Continue\n  2  Smart Compact\n  3  Keep Recent\n  4  Clear`,
+      reason: `"${choice}" is not a valid option. Please reply with 1, 2, 3, 4, or 0 to cancel.\n\n  1  Continue\n  2  Smart Compact\n  3  Keep Recent\n  4  Clear\n  0  Cancel (continue without warning)`,
     });
   }
   process.exit(0);
@@ -337,8 +369,9 @@ output({
     `  2  Smart Compact     keep full history, strip tool calls & internal noise`,
     `  3  Keep Recent       drop oldest, keep last 20 messages`,
     `  4  Clear             wipe everything`,
+    `  0  Cancel            dismiss this warning and continue`,
     ``,
-    `Reply with 1, 2, 3, or 4.`,
+    `Reply with 1, 2, 3, 4, or 0.`,
   ].join('\n'),
 });
 
