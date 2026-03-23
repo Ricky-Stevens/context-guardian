@@ -69,10 +69,10 @@ if (fs.existsSync(flags.compactMenu)) {
     const cPreTokens = cUsage ? cUsage.current_tokens : estimateTokens(transcript_path);
     const cPreMax    = cUsage?.max_tokens || resolveMaxTokens();
     const cFull      = fs.readFileSync(cExportFile, 'utf8');
-    const { stats: cStats, block: cStatsBlock } = formatCompactionStats(cPreTokens, cPreMax, cFull);
+    const { stats: cStats, block: cStatsBlock } = formatCompactionStats(cPreTokens, cPreMax, cFull, { hasOriginalPrompt: false });
 
     // Write reload flag (no original_prompt — manual compact, not blocking a message)
-    fs.writeFileSync(RELOAD_FILE, JSON.stringify({
+    fs.writeFileSync(pState.reload, JSON.stringify({
       checkpoint_path: cExportFile, original_prompt: '', ts: Date.now(), stats: cStats,
     }));
 
@@ -127,7 +127,7 @@ if (fs.existsSync(flags.menu)) {
     ensureDataDir();
     fs.mkdirSync(CHECKPOINTS_DIR, { recursive: true });
     const stamp      = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const exportFile = path.join(CHECKPOINTS_DIR, `session-${stamp}.md`);
+    const exportFile = path.join(CHECKPOINTS_DIR, `session-${stamp}-${session_id.slice(0, 8)}.md`);
 
     log(`menu-reply choice=${choice} session=${session_id}`);
 
@@ -135,7 +135,7 @@ if (fs.existsSync(flags.menu)) {
       // Clear warned flag so it can re-trigger as context grows.
       // Use cooldown to prevent immediate re-trigger.
       try { fs.unlinkSync(flags.warned); } catch {}
-      try { fs.writeFileSync(COOLDOWN_FILE, JSON.stringify({ ts: Date.now() })); } catch {}
+      try { fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() })); } catch {}
       output({
         hookSpecificOutput: {
           hookEventName: 'UserPromptSubmit',
@@ -154,8 +154,8 @@ if (fs.existsSync(flags.menu)) {
       const preTokens = preStats.currentTokens || 0;
       const preMax    = preStats.maxTokens || resolveMaxTokens();
       const fullCheckpoint = fs.readFileSync(exportFile, 'utf8');
-      const { stats, block: statsBlock } = formatCompactionStats(preTokens, preMax, fullCheckpoint);
-      fs.writeFileSync(RELOAD_FILE, JSON.stringify({
+      const { stats, block: statsBlock } = formatCompactionStats(preTokens, preMax, fullCheckpoint, { hasOriginalPrompt: !!originalPrompt });
+      fs.writeFileSync(pState.reload, JSON.stringify({
         checkpoint_path: exportFile, original_prompt: originalPrompt, ts: Date.now(), stats,
       }));
       try { fs.unlinkSync(flags.warned); } catch {}
@@ -175,8 +175,8 @@ if (fs.existsSync(flags.menu)) {
       const preTokens3 = preStats3.currentTokens || 0;
       const preMax3    = preStats3.maxTokens || resolveMaxTokens();
       const fullCheckpoint3 = fs.readFileSync(exportFile, 'utf8');
-      const { stats: stats3, block: statsBlock3 } = formatCompactionStats(preTokens3, preMax3, fullCheckpoint3);
-      fs.writeFileSync(RELOAD_FILE, JSON.stringify({
+      const { stats: stats3, block: statsBlock3 } = formatCompactionStats(preTokens3, preMax3, fullCheckpoint3, { hasOriginalPrompt: !!originalPrompt });
+      fs.writeFileSync(pState.reload, JSON.stringify({
         checkpoint_path: exportFile, original_prompt: originalPrompt, ts: Date.now(), stats: stats3,
       }));
       try { fs.unlinkSync(flags.warned); } catch {}
@@ -196,7 +196,7 @@ if (fs.existsSync(flags.menu)) {
 
     // Cooldown — prevent re-trigger for 2 minutes after any compaction
     if (['2', '3', '4'].includes(choice)) {
-      try { fs.writeFileSync(COOLDOWN_FILE, JSON.stringify({ ts: Date.now() })); } catch {}
+      try { fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() })); } catch {}
     }
 
   } else {
@@ -213,12 +213,12 @@ if (fs.existsSync(flags.menu)) {
 // ---------------------------------------------------------------------------
 // Resume detection — replay original prompt after /clear + checkpoint restore
 // ---------------------------------------------------------------------------
-if (fs.existsSync(RESUME_FILE)) {
+if (fs.existsSync(pState.resume)) {
   const resumeInput = (prompt || '').trim().toLowerCase();
   if (resumeInput === 'resume') {
     try {
-      const resumeData = JSON.parse(fs.readFileSync(RESUME_FILE, 'utf8'));
-      fs.unlinkSync(RESUME_FILE);
+      const resumeData = JSON.parse(fs.readFileSync(pState.resume, 'utf8'));
+      fs.unlinkSync(pState.resume);
       if (resumeData.original_prompt && Date.now() - resumeData.ts < 10 * 60 * 1000) {
         log(`resume-replay session=${session_id} prompt="${resumeData.original_prompt.slice(0, 50)}"`);
         output({
@@ -231,7 +231,7 @@ if (fs.existsSync(RESUME_FILE)) {
         process.exit(0);
       }
     } catch (e) { log(`resume-error: ${e.message}`); }
-    try { fs.unlinkSync(RESUME_FILE); } catch {}
+    try { fs.unlinkSync(pState.resume); } catch {}
   }
 }
 
@@ -244,13 +244,13 @@ if (trimmed.startsWith('/')) process.exit(0);
 // ---------------------------------------------------------------------------
 // Reload detection — inject checkpoint after /clear
 // ---------------------------------------------------------------------------
-if (fs.existsSync(RELOAD_FILE)) {
+if (fs.existsSync(pState.reload)) {
   try {
-    const reload = JSON.parse(fs.readFileSync(RELOAD_FILE, 'utf8'));
+    const reload = JSON.parse(fs.readFileSync(pState.reload, 'utf8'));
     if (Date.now() - reload.ts < 10 * 60 * 1000) {
       const checkpoint = fs.readFileSync(reload.checkpoint_path, 'utf8');
-      fs.unlinkSync(RELOAD_FILE);
-      try { fs.unlinkSync(COOLDOWN_FILE); } catch {}
+      fs.unlinkSync(pState.reload);
+      try { fs.unlinkSync(pState.cooldown); } catch {}
       let reloadStatsLine = '';
       if (reload.stats) {
         const s = reload.stats;
@@ -279,7 +279,7 @@ if (fs.existsSync(RELOAD_FILE)) {
         // Not "resume" — inject checkpoint and tell them about resume
         if (hasOriginal) {
           ensureDataDir();
-          fs.writeFileSync(RESUME_FILE, JSON.stringify({
+          fs.writeFileSync(pState.resume, JSON.stringify({
             original_prompt: reload.original_prompt, ts: Date.now(),
           }));
         }
@@ -297,10 +297,10 @@ if (fs.existsSync(RELOAD_FILE)) {
       }
       process.exit(0);
     } else {
-      fs.unlinkSync(RELOAD_FILE);
+      fs.unlinkSync(pState.reload);
       log(`reload-expired session=${session_id}`);
     }
-  } catch (e) { try { fs.unlinkSync(RELOAD_FILE); } catch {} log(`reload-error: ${e.message}`); }
+  } catch (e) { try { fs.unlinkSync(pState.reload); } catch {} log(`reload-error: ${e.message}`); }
 }
 
 // ---------------------------------------------------------------------------
@@ -336,14 +336,14 @@ if (pct < threshold) {
 }
 
 // Cooldown after compaction — don't re-trigger for 2 minutes
-if (fs.existsSync(COOLDOWN_FILE)) {
+if (fs.existsSync(pState.cooldown)) {
   try {
-    const cd = JSON.parse(fs.readFileSync(COOLDOWN_FILE, 'utf8'));
+    const cd = JSON.parse(fs.readFileSync(pState.cooldown, 'utf8'));
     if (Date.now() - cd.ts < 2 * 60 * 1000) {
       log(`cooldown active — skipping threshold (${Math.round((Date.now() - cd.ts) / 1000)}s since compaction)`);
       process.exit(0);
     }
-    fs.unlinkSync(COOLDOWN_FILE);
+    fs.unlinkSync(pState.cooldown);
   } catch {}
 }
 
