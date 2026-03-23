@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
-import { RESUME_FILE, COOLDOWN_FILE } from '../lib/paths.mjs';
+
+import { projectStateFiles } from '../lib/paths.mjs';
 import { log } from '../lib/logger.mjs';
 
-const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+let input;
+try {
+  input = JSON.parse(fs.readFileSync(0, 'utf8'));
+} catch (e) {
+  process.stderr.write(`context-guardian: failed to parse stdin: ${e.message}\n`);
+  process.exit(0);
+}
 
 // Clean up session-scoped flags in the project's .claude/ directory.
 const flagsDir = path.join(input.cwd || process.cwd(), '.claude');
@@ -18,14 +24,10 @@ if (fs.existsSync(flagsDir)) {
 }
 
 // Clear stale resume prompt and cooldown from previous sessions.
-// Note: the reload handler in submit.mjs re-creates RESUME_FILE AFTER
+// Note: the reload handler in submit.mjs re-creates resume AFTER
 // SessionStart fires, so this only clears leftovers from old sessions.
-try { fs.unlinkSync(RESUME_FILE); } catch {}
-try { fs.unlinkSync(COOLDOWN_FILE); } catch {}
-
-// Clean up legacy /tmp state file if present.
-if (input.session_id) {
-  try { fs.unlinkSync(path.join(os.tmpdir(), `cg-state-${input.session_id}.json`)); } catch {}
-}
+const pState = projectStateFiles(input.cwd);
+try { fs.unlinkSync(pState.resume); } catch {}
+try { fs.unlinkSync(pState.cooldown); } catch {}
 
 log(`session-start session=${input.session_id || 'unknown'} cwd=${input.cwd || 'unknown'}`);

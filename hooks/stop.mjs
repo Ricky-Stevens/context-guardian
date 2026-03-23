@@ -6,8 +6,12 @@ import { log } from '../lib/logger.mjs';
 // Stop hook — logs session end. Token state is written by the submit hook
 // since context_window is not available in the Stop hook input.
 // ---------------------------------------------------------------------------
-const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-
-if (input.stop_hook_active) process.exit(0);
+let input;
+try {
+  input = JSON.parse(fs.readFileSync(0, 'utf8'));
+} catch (e) {
+  process.stderr.write(`context-guardian: failed to parse stdin: ${e.message}\n`);
+  process.exit(0);
+}
 
 log(`STOP session=${input.session_id || 'unknown'}`);
