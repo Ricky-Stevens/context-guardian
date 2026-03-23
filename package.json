@@ -19,11 +19,13 @@
     "url": "https://github.com/Ricky-Stevens/context-guardian"
   },
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "files": [
     ".claude-plugin/",
     "hooks/",
     "lib/",
-    "scripts/",
     "skills/",
     "README.md",
     "LICENSE"
