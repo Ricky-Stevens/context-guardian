@@ -15,7 +15,7 @@ context-guardian/
   hooks/
     submit.mjs                     # UserPromptSubmit — main logic
     session-start.mjs              # SessionStart — flag cleanup
-    stop.mjs                       # Stop — captures real token counts
+    stop.mjs                       # Stop — session logging
   lib/
     paths.mjs                      # Centralized path resolution (CLAUDE_PLUGIN_DATA)
     logger.mjs                     # Shared logging
@@ -24,8 +24,6 @@ context-guardian/
     tokens.mjs                     # Token estimation + real state
     transcript.mjs                 # extractConversation, extractRecent
     stats.mjs                      # Compaction stats formatting
-  scripts/
-    compact.mjs                    # Standalone compaction (used by compact skill)
   skills/
     status/SKILL.md                # /context-guardian:status
     config/SKILL.md                # /context-guardian:config
@@ -37,9 +35,9 @@ context-guardian/
 | Path | Purpose |
 |------|---------|
 | `${CLAUDE_PLUGIN_DATA}/config.json` | Config (threshold, max_tokens) |
-| `${CLAUDE_PLUGIN_DATA}/state.json` | Real token counts from Stop hook |
-| `${CLAUDE_PLUGIN_DATA}/reload.json` | Checkpoint injection trigger after /clear |
-| `${CLAUDE_PLUGIN_DATA}/resume.json` | Original prompt for `resume` replay |
+| `${CLAUDE_PLUGIN_DATA}/state.json` | Real token counts from submit hook |
+| `${CLAUDE_PLUGIN_DATA}/reload-{hash}.json` | Checkpoint injection trigger after /clear (project-scoped) |
+| `${CLAUDE_PLUGIN_DATA}/resume-{hash}.json` | Original prompt for `resume` replay (project-scoped) |
 | `${CLAUDE_PLUGIN_DATA}/checkpoints/` | Saved compaction checkpoints |
 | `.claude/cg-warned-{session_id}` | Per-session "already warned" flag |
 | `.claude/cg-menu-{session_id}` | Signals we're waiting for a menu reply |
@@ -97,7 +95,7 @@ No original prompt stored (manual trigger, not blocking a message).
 
 ## Token Counting
 
-1. **Real counts (preferred):** Stop hook captures `context_window.current_tokens` and `context_window.max_tokens` from Claude Code's API response.
+1. **Real counts (preferred):** Submit hook reads `message.usage` from the most recent assistant message in the transcript JSONL (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) and writes the result to `state.json`.
 2. **Byte estimation (fallback):** Content bytes after the last compact marker, divided by 4.
 
 ## Testing

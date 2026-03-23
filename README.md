@@ -86,8 +86,9 @@ Manually trigger compaction without waiting for the threshold warning:
 │
 │  1  Smart Compact     full history, strip tool noise
 │  2  Keep Recent       last 20 messages only
+│  0  Cancel
 │
-│  Reply with 1 or 2.
+│  Reply with 1, 2, or 0.
 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────
 ```
@@ -229,8 +230,9 @@ Context Guardian — ~37.2% used (~372,000 / 1,000,000 tokens)
   2  Smart Compact     keep full history, strip tool calls & internal noise
   3  Keep Recent       drop oldest, keep last 20 messages
   4  Clear             wipe everything
+  0  Cancel            dismiss this warning and continue
 
-Reply with 1, 2, 3, or 4.
+Reply with 1, 2, 3, 4, or 0.
 ```
 
 Your original message is saved. You don't need to retype it.
@@ -296,7 +298,7 @@ context-guardian/
   hooks/
     submit.mjs            # UserPromptSubmit — main logic
     session-start.mjs     # SessionStart — flag cleanup
-    stop.mjs              # Stop — session logging
+    stop.mjs              # Stop — session end logging
   lib/
     paths.mjs             # Centralized path resolution (CLAUDE_PLUGIN_DATA)
     logger.mjs            # Shared logging
@@ -305,8 +307,6 @@ context-guardian/
     tokens.mjs            # Token counting from transcript usage data
     transcript.mjs        # Conversation extraction
     stats.mjs             # Compaction stats formatting
-  scripts/
-    compact.mjs           # Standalone compaction (used by compact skill)
   skills/
     status/SKILL.md       # /context-guardian:status
     config/SKILL.md       # /context-guardian:config
@@ -321,7 +321,7 @@ context-guardian/
 |------|-------|---------|
 | `submit.mjs` | `UserPromptSubmit` | Main logic — monitors usage, shows menu, handles compaction, resume, cooldown |
 | `session-start.mjs` | `SessionStart` | Cleans up session flags, stale resume/cooldown files |
-| `stop.mjs` | `Stop` | Logs session end |
+| `stop.mjs` | `Stop` | Logs session end. Token state is written by the submit hook. |
 
 ### Why Skills Can't Replace Hooks
 
@@ -359,10 +359,12 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 |------|---------|
 | `config.json` | Threshold and max_tokens override |
 | `state.json` | Latest token counts, model, transcript path |
-| `reload.json` | Triggers checkpoint injection after `/clear` |
-| `resume.json` | Stores original prompt for `resume` replay |
-| `cooldown.json` | Prevents warning re-trigger for 2 minutes |
+| `reload-{hash}.json` | Triggers checkpoint injection after `/clear` (project-scoped) |
+| `resume-{hash}.json` | Stores original prompt for `resume` replay (project-scoped) |
+| `cooldown-{hash}.json` | Prevents warning re-trigger for 2 minutes (project-scoped) |
 | `checkpoints/` | Saved compaction checkpoints (markdown) |
+
+The `{hash}` suffix is a short SHA-256 of the project directory, ensuring multiple simultaneous sessions in different projects don't interfere.
 
 Session-scoped flags (`cg-warned`, `cg-menu`, `cg-prompt`, `cg-compact`) live in the project's `.claude/` directory. These are cleaned up by the SessionStart hook on every new session and `/clear`.
 
