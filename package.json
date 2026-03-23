@@ -1,0 +1,31 @@
+{
+  "name": "context-guardian",
+  "version": "1.0.0",
+  "description": "Automatic context window monitoring and smart compaction for Claude Code",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "context-window",
+    "tokens",
+    "compaction",
+    "ai",
+    "hooks",
+    "skills"
+  ],
+  "author": "Ricky",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ricky-Stevens/context-guardian"
+  },
+  "type": "module",
+  "files": [
+    ".claude-plugin/",
+    "hooks/",
+    "lib/",
+    "scripts/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ]
+}
