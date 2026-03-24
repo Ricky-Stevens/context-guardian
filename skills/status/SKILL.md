@@ -8,50 +8,59 @@ allowed-tools: Read, Bash
 
 # Context Guardian Status
 
-Show the user their current context window status. Gather data from these two files:
+Read the session-scoped state file and display the status box. Follow these steps exactly.
 
-1. **Token state** — `${CLAUDE_PLUGIN_DATA}/state.json`
-   Contains: `current_tokens`, `max_tokens`, `pct`, `source`, `model`, `session_id`, `transcript_path`, `ts`
-   If missing or stale (ts older than 5 minutes), note that counts are unavailable.
+## Step 1 — Read the state file
 
-2. **Config** — `${CLAUDE_PLUGIN_DATA}/config.json`
-   Contains: `threshold`, `max_tokens`
-   If missing, defaults are: threshold 0.35, max_tokens 200000.
+Read the file at `${CLAUDE_PLUGIN_DATA}/state-${CLAUDE_SESSION_ID}.json`.
 
-Use Bash to get the current unix timestamp in seconds: `date +%s`
+If `${CLAUDE_PLUGIN_DATA}` is empty, use `~/.claude/context-guardian/` instead.
 
-Display a status report in this exact format (fill in real values):
+If the file does not exist, display this and stop:
 
 ```
 ┌─────────────────────────────────────────────────
 │  Context Guardian Status
 │
-│  Current usage:   X,XXX / X,XXX,XXX tokens (XX.X%)
-│  Threshold:       XX% (triggers warning)
-│  Headroom:        ~X,XXX tokens before warning
-│  Data source:     real counts / estimated
-│
-│  Model:           <model name from state.json, or "unknown">
-│  Max tokens:      X,XXX,XXX
-│  Last updated:    <relative time, e.g. "12 seconds ago">
-│
-│  Recommendation:  <one of the below>
+│  No data for this session.
+│  Send a non-slash-command message first so the
+│  submit hook can capture token counts.
 │
 └─────────────────────────────────────────────────
 ```
 
-For "Data source": use the `source` field from state.json ("real" → "real counts", "estimated" → "estimated").
+## Step 2 — Compute "Last updated"
 
-For "Last updated": compute the difference between the current unix timestamp and the `ts` field (which is in milliseconds). Show as seconds/minutes ago.
+Run: `date +%s`
 
-Recommendations based on usage vs threshold:
-- Below 50% of threshold: "All clear. Plenty of context remaining."
-- 50-99% of threshold: "Approaching threshold. Consider wrapping up complex tasks."
-- At or above threshold: "At threshold. Compaction recommended — the warning menu will trigger on your next message."
-- If state.json is missing/stale: "No recent data. Send a message first so the submit hook can capture token counts."
+Subtract `ts / 1000` (ts is in milliseconds) from the result. Show as:
+- Under 60 seconds: "X seconds ago"
+- 60-3599 seconds: "X minutes ago"
+- 3600+ seconds: "X hours ago"
 
-If `${CLAUDE_PLUGIN_DATA}` directory doesn't exist, check `~/.claude/context-guardian/` as fallback.
+If the difference is greater than 300 seconds (5 minutes), treat the data as stale and append "(stale)" to the Last updated line.
 
-Do NOT add extra commentary beyond the status box. Just show the data.
+## Step 3 — Display the status box
+
+All values come directly from the JSON file — do NOT recompute them. Use this exact format:
+
+```
+┌─────────────────────────────────────────────────
+│  Context Guardian Status
+│
+│  Current usage:   {current_tokens formatted with commas} / {max_tokens formatted with commas} tokens ({pct as percentage with 1 decimal}%)
+│  Threshold:       {threshold as percentage with 0 decimals}% (triggers warning)
+│  Headroom:        ~{headroom formatted with commas} tokens before warning
+│  Data source:     {source: "real" → "real counts", "estimated" → "estimated"}
+│
+│  Model:           {model}
+│  Last updated:    {computed relative time}
+│
+│  Recommendation:  {recommendation}
+│
+└─────────────────────────────────────────────────
+```
+
+Output ONLY this box. No extra text, explanation, or commentary before or after.
 
 $ARGUMENTS

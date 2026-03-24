@@ -8,35 +8,28 @@ allowed-tools: Read, Edit, Bash
 
 # Context Guardian Config
 
-Manage the Context Guardian configuration file at `${CLAUDE_PLUGIN_DATA}/config.json`.
-If that directory doesn't exist, check `~/.claude/context-guardian/config.json` as fallback.
+Manage the configuration file at `${CLAUDE_PLUGIN_DATA}/config.json`.
+If `${CLAUDE_PLUGIN_DATA}` is empty, use `~/.claude/context-guardian/config.json`.
 
 ## No arguments — show current config
 
-If `$ARGUMENTS` is empty, read TWO files:
+If `$ARGUMENTS` is empty, read these files:
 
-1. **Config** — `${CLAUDE_PLUGIN_DATA}/config.json` (or fallback path)
-2. **State** — `${CLAUDE_PLUGIN_DATA}/state.json` (may not exist yet)
+1. `${CLAUDE_PLUGIN_DATA}/config.json` (may not exist — defaults: threshold 0.35, max_tokens 200000)
+2. `${CLAUDE_PLUGIN_DATA}/state-${CLAUDE_SESSION_ID}.json` (may not exist)
 
-The state file contains `max_tokens` and `model` auto-detected from the current session's transcript. If it exists, show the detected value alongside the config fallback.
-
-Display:
+If the state file exists and has a `model` field, display:
 
 ```
 ┌─────────────────────────────────────────────────
 │  Context Guardian Config
 │
-│  threshold:        0.35  (trigger warning at 35% usage)
-│  max_tokens:       200,000  (config default)
-│  detected model:   claude-opus-4-6
-│  detected limit:   1,000,000 tokens
+│  threshold:        {threshold}  (trigger warning at {threshold*100}% usage)
+│  max_tokens:       {max_tokens formatted with commas}  (config default)
+│  detected model:   {model from state file}
+│  detected limit:   {max_tokens from state file, formatted with commas} tokens
 │
-│  The config max_tokens is only used before the first
-│  assistant response. After that, the model is detected
-│  from the transcript and the correct limit is applied
-│  automatically (Opus 4.6+ = 1M, all others = 200K).
-│
-│  Config file:  <path to config.json>
+│  Config file:  {path to config.json}
 │
 │  Usage:
 │    /context-guardian:config threshold 0.50
@@ -46,25 +39,28 @@ Display:
 └─────────────────────────────────────────────────
 ```
 
-If state.json doesn't exist or has no model field, omit the "detected model" and "detected limit" lines and instead show:
+If the state file doesn't exist or has no model field, omit the "detected" lines and show:
 
 ```
-│  max_tokens:       200,000  (config default — will auto-detect after first response)
+│  max_tokens:       {max_tokens formatted with commas}  (will auto-detect after first response)
 ```
+
+Output ONLY the box. No extra commentary.
 
 ## With arguments — update config
 
-Parse `$ARGUMENTS` as `<key> <value>` and update the config file.
+Parse `$ARGUMENTS` as `<key> <value>`.
 
-Supported keys and validation:
-- **threshold**: Must be a number between 0.01 and 0.99. This is a ratio, not a percentage. If the user passes a whole number like "50", interpret it as 0.50.
-- **max_tokens**: Must be a positive integer. Common values: 200000 (Sonnet/Haiku), 1000000 (Opus 4.6+). Note: this is overridden by auto-detection once a session is active.
-- **reset**: No value needed. Reset config to defaults (threshold: 0.35, max_tokens: 200000).
+**threshold**: Must be 0.01–0.99. If the user passes a whole number (e.g., "50"), divide by 100 (→ 0.50).
 
-After updating, read back the file and show the updated config in the same box format above with a confirmation: "Config updated. Changes take effect on the next message."
+**max_tokens**: Must be a positive integer.
 
-If the key is unrecognized, show the usage help.
+**reset**: No value needed. Write `{"threshold": 0.35, "max_tokens": 200000}` to the config file.
 
-If the config file doesn't exist yet, create it with defaults first, then apply the change.
+For threshold/max_tokens: Read the existing config (or use defaults if missing), update the key, write back with `JSON.stringify(cfg, null, 2)`.
+
+After updating, read back the file and display the config box with a confirmation line: "Config updated. Changes take effect on the next message."
+
+If the key is unrecognized, show the Usage section from the box above.
 
 $ARGUMENTS
