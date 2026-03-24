@@ -67,11 +67,19 @@ function capCheckpointContent(content, maxTokens) {
 }
 
 // ---------------------------------------------------------------------------
-// Handle manual compact (from /context-guardian:compact or :prune skill)
+// Handle manual compact — direct skill command OR legacy flag file
 // ---------------------------------------------------------------------------
+let cMode = null;
 if (fs.existsSync(flags.compactMenu)) {
-	const cMode = (fs.readFileSync(flags.compactMenu, "utf8") || "").trim();
+	cMode = (fs.readFileSync(flags.compactMenu, "utf8") || "").trim();
 	fs.unlinkSync(flags.compactMenu);
+} else {
+	const p = (prompt || "").trim().toLowerCase();
+	if (p.startsWith("/context-guardian:compact")) cMode = "smart";
+	else if (p.startsWith("/context-guardian:prune")) cMode = "recent";
+}
+
+if (cMode) {
 
 	if (cMode !== "smart" && cMode !== "recent") {
 		log(`manual-compact-invalid-mode mode="${cMode}" session=${session_id}`);
