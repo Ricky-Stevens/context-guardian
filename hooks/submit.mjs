@@ -461,10 +461,26 @@ if (fs.existsSync(pState.resume)) {
 }
 
 // ---------------------------------------------------------------------------
-// Bypass slash commands
+// Bypass slash commands (but write state preview if reload pending)
 // ---------------------------------------------------------------------------
 const trimmed = (prompt || "").trim().toLowerCase();
-if (trimmed.startsWith("/")) process.exit(0);
+if (trimmed.startsWith("/")) {
+	if (fs.existsSync(pState.reload)) {
+		try {
+			const rl = JSON.parse(fs.readFileSync(pState.reload, "utf8"));
+			if (Date.now() - rl.ts < 10 * 60 * 1000 && rl.stats) {
+				const pt = rl.stats.postTokens || 0;
+				const pm = rl.stats.maxTokens || resolveMaxTokens() || 200000;
+				writeCompactionState(
+					pt,
+					pm,
+					"Context checkpoint ready — send a message to restore.",
+				);
+			}
+		} catch {}
+	}
+	process.exit(0);
+}
 
 // ---------------------------------------------------------------------------
 // Reload detection — inject checkpoint after /clear
