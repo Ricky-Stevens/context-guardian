@@ -22,14 +22,12 @@ That's it. Works immediately after `/reload-plugins` or on your next Claude Code
 
 ### Update
 
-To pull the latest version, uninstall and reinstall:
+To pull the latest version:
 
-```bash
-/plugin uninstall context-guardian
-/plugin install context-guardian
-```
-
-Then start a new Claude Code session to pick up the changes.
+1. Open `/plugins`
+2. Go to **Marketplaces** tab → select the context-guardian marketplace → **Update marketplace**
+3. Go to **Installed** tab → select context-guardian → **Update**
+4. Run `/reload-plugins` or start a new session
 
 ### Uninstall
 
