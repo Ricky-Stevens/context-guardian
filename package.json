@@ -9,6 +9,10 @@
     "url": "https://github.com/Ricky-Stevens/context-guardian"
   },
   "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "lint": "biome check hooks/ lib/"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
