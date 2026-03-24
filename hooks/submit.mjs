@@ -587,6 +587,8 @@ log(
 // Write state so /context-guardian:status can read it (session-scoped).
 // Pre-compute values so the status skill just reads and formats — no arithmetic.
 const headroom = Math.max(0, Math.round(maxTokens * threshold - currentTokens));
+const pctDisplay = (pct * 100).toFixed(1);
+const thresholdDisplay = Math.round(threshold * 100);
 let recommendation;
 if (pct < threshold * 0.5)
 	recommendation = "All clear. Plenty of context remaining.";
@@ -604,7 +606,9 @@ try {
 			current_tokens: currentTokens,
 			max_tokens: maxTokens,
 			pct,
+			pct_display: pctDisplay,
 			threshold,
+			threshold_display: thresholdDisplay,
 			headroom,
 			recommendation,
 			source,

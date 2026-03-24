@@ -24,7 +24,7 @@ If the state file exists and has a `model` field, display:
 ┌─────────────────────────────────────────────────
 │  Context Guardian Config
 │
-│  threshold:        {threshold}  (trigger warning at {threshold*100}% usage)
+│  threshold:        {threshold}  (trigger warning at {threshold_display}% usage, or threshold × 100 if threshold_display is missing)
 │  max_tokens:       {max_tokens formatted with commas}  (config default)
 │  detected model:   {model from state file}
 │  detected limit:   {max_tokens from state file, formatted with commas} tokens

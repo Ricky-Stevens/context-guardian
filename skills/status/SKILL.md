@@ -38,19 +38,19 @@ Subtract `ts / 1000` (ts is in milliseconds) from the result. Show as:
 - 60-3599 seconds: "X minutes ago"
 - 3600+ seconds: "X hours ago"
 
-If the difference is greater than 300 seconds (5 minutes), treat the data as stale and append "(stale)" to the Last updated line.
+If the difference is greater than 300 seconds (5 minutes), append "(stale)" to the value.
 
 ## Step 3 — Display the status box
 
-All values come directly from the JSON file — do NOT recompute them. Use this exact format:
+All values come directly from the JSON — use them as-is. Pre-computed fields: `pct_display` (already a percentage string like "2.5"), `threshold_display` (already a whole number like "35"), `headroom`, `recommendation`.
 
 ```
 ┌─────────────────────────────────────────────────
 │  Context Guardian Status
 │
-│  Current usage:   {current_tokens formatted with commas} / {max_tokens formatted with commas} tokens ({pct as percentage with 1 decimal}%)
-│  Threshold:       {threshold as percentage with 0 decimals}% (triggers warning)
-│  Headroom:        ~{headroom formatted with commas} tokens before warning
+│  Current usage:   {current_tokens with commas} / {max_tokens with commas} tokens ({pct_display}%)
+│  Threshold:       {threshold_display}% (triggers warning)
+│  Headroom:        ~{headroom with commas} tokens before warning
 │  Data source:     {source: "real" → "real counts", "estimated" → "estimated"}
 │
 │  Model:           {model}
