@@ -67,6 +67,36 @@ function capCheckpointContent(content, maxTokens) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper — write state file with post-compaction estimates
+// ---------------------------------------------------------------------------
+function writeCompactionState(tokens, max, rec) {
+	try {
+		const c = loadConfig();
+		const th = c.threshold ?? 0.35;
+		const p = tokens / max;
+		ensureDataDir();
+		fs.writeFileSync(
+			stateFile(session_id),
+			JSON.stringify({
+				current_tokens: tokens,
+				max_tokens: max,
+				pct: p,
+				pct_display: (p * 100).toFixed(1),
+				threshold: th,
+				threshold_display: Math.round(th * 100),
+				headroom: Math.max(0, Math.round(max * th - tokens)),
+				recommendation: rec,
+				source: "estimated",
+				model: "unknown",
+				session_id,
+				transcript_path,
+				ts: Date.now(),
+			}),
+		);
+	} catch {}
+}
+
+// ---------------------------------------------------------------------------
 // Handle manual compact — direct skill command OR legacy flag file
 // ---------------------------------------------------------------------------
 let cMode = null;
@@ -147,6 +177,7 @@ if (cMode) {
 			ts: Date.now(),
 			stats: cStats,
 			mode: cMode,
+			created_session: session_id,
 		}),
 	);
 
@@ -276,6 +307,7 @@ if (fs.existsSync(flags.menu)) {
 					ts: Date.now(),
 					stats,
 					mode: "smart",
+					created_session: session_id,
 				}),
 			);
 			try {
@@ -335,6 +367,7 @@ if (fs.existsSync(flags.menu)) {
 					ts: Date.now(),
 					stats: stats3,
 					mode: "recent",
+					created_session: session_id,
 				}),
 			);
 			try {
@@ -440,49 +473,28 @@ if (fs.existsSync(pState.reload)) {
 	try {
 		const reload = JSON.parse(fs.readFileSync(pState.reload, "utf8"));
 		if (Date.now() - reload.ts < 10 * 60 * 1000) {
-			// Guard: only inject into a fresh post-/clear session. A running session
-			// has assistant messages in the transcript; a fresh session does not.
-			let hasAssistantMessages = false;
-			if (transcript_path && fs.existsSync(transcript_path)) {
-				try {
-					const tStat = fs.statSync(transcript_path);
-					const peekSize = Math.min(tStat.size, 64 * 1024);
-					const peekBuf = Buffer.alloc(peekSize);
-					const peekFd = fs.openSync(transcript_path, "r");
-					try {
-						fs.readSync(
-							peekFd,
-							peekBuf,
-							0,
-							peekSize,
-							Math.max(0, tStat.size - peekSize),
-						);
-					} finally {
-						fs.closeSync(peekFd);
-					}
-					hasAssistantMessages = peekBuf
-						.toString("utf8")
-						.includes('"type":"assistant"');
-				} catch {}
-			}
-			if (hasAssistantMessages) {
+			// Guard: only inject into a different session (post-/clear).
+			// If created_session matches, user hasn't /cleared yet.
+			if (reload.created_session === session_id) {
 				log(
-					`reload-skip session=${session_id} — transcript has assistant messages, not a fresh session`,
+					`reload-skip session=${session_id} — same session that created the compaction`,
 				);
-				// One-time reminder if this session created the compaction but hasn't /cleared yet
+				// One-time non-blocking reminder to /clear
 				if (!fs.existsSync(flags.clearReminded)) {
 					fs.mkdirSync(flags.dir, { recursive: true });
 					fs.writeFileSync(flags.clearReminded, "1");
 					output({
-						decision: "block",
-						reason:
-							"Context Guardian: A compaction checkpoint is ready but hasn't been applied.\n\n" +
-							"  Type /clear to apply it, or continue working to dismiss this reminder.\n" +
-							"  The checkpoint expires in 10 minutes.",
+						hookSpecificOutput: {
+							hookEventName: "UserPromptSubmit",
+							additionalContext:
+								"[Context Guardian] A compaction checkpoint is ready but hasn't been applied. " +
+								"Remind the user: type /clear to apply it, or continue working to dismiss. " +
+								"The checkpoint expires in 10 minutes. Process the user's message normally.",
+						},
 					});
 					process.exit(0);
 				}
-				// Don't delete the reload file — the right session may still need it
+				// Don't delete the reload file — the new session after /clear needs it
 				// (fall through to normal token check)
 			} else {
 				// Fresh session — inject the checkpoint
@@ -558,6 +570,15 @@ if (fs.existsSync(pState.reload)) {
 						},
 					});
 				}
+				// Write state file so /context-guardian:status works immediately
+				const rlTokens =
+					reload.stats?.postTokens || Math.round(checkpoint.length / 4);
+				const rlMax = reload.stats?.maxTokens || resolveMaxTokens() || 200000;
+				writeCompactionState(
+					rlTokens,
+					rlMax,
+					"Context restored from checkpoint.",
+				);
 				process.exit(0);
 			}
 		} else {
