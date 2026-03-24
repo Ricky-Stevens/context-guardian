@@ -2,13 +2,10 @@
 name: prune
 description: Run Keep Recent — drop oldest messages, keep last 20 only
 context: inline
-disable-model-invocation: true
 ---
 
 # Context Guardian — Prune (Keep Recent)
 
-Prunes the conversation to the last 20 messages, discarding everything older. Good when only recent work matters.
-
-The submit hook handles this command directly — no action needed here.
+The submit hook has already run the compaction. Display the compaction stats from the additional context verbatim — do not paraphrase or reformat the stats box. Then tell the user to type `/clear` to apply.
 
 $ARGUMENTS

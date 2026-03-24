@@ -110,7 +110,6 @@ if (fs.existsSync(flags.compactMenu)) {
 }
 
 if (cMode) {
-
 	if (cMode !== "smart" && cMode !== "recent") {
 		log(`manual-compact-invalid-mode mode="${cMode}" session=${session_id}`);
 		output({
@@ -143,8 +142,10 @@ if (cMode) {
 	if (!hasExtractedContent(cContent)) {
 		log(`manual-compact-empty mode=${cMode} session=${session_id}`);
 		output({
-			decision: "block",
-			reason: `Context Guardian could not extract meaningful conversation content. Your session may consist primarily of tool interactions with minimal text. Try ${cMode === "smart" ? "/context-guardian:prune" : "/context-guardian:compact"} instead, or continue working.`,
+			hookSpecificOutput: {
+				hookEventName: "UserPromptSubmit",
+				additionalContext: `[Context Guardian] Could not extract meaningful conversation content. Your session may consist primarily of tool interactions with minimal text. Try ${cMode === "smart" ? "/context-guardian:prune" : "/context-guardian:compact"} instead, or continue working.`,
+			},
 		});
 		process.exit(0);
 	}
@@ -187,8 +188,10 @@ if (cMode) {
 	rotateCheckpoints();
 
 	output({
-		decision: "block",
-		reason: cStatsBlock,
+		hookSpecificOutput: {
+			hookEventName: "UserPromptSubmit",
+			additionalContext: `[Context Guardian] Manual compaction complete.\n\n${cStatsBlock}\n\nDisplay the stats box above verbatim. Then tell the user to type /clear to apply the compaction.`,
+		},
 	});
 
 	// Cooldown — prevent re-trigger for 2 minutes after compaction
