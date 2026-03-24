@@ -125,6 +125,16 @@ Each line is a JSON object. Relevant `type` values: `user`, `assistant`, `system
 - User message: `message.content` is string or array of content blocks
 - Assistant message: `message.content` is array — extractConversation keeps only `type: "text"` blocks
 
+## Versioning
+
+Version must be bumped in **three files** for marketplace updates to work:
+
+1. `package.json` → `"version"`
+2. `.claude-plugin/plugin.json` → `"version"`
+3. `.claude-plugin/marketplace.json` → `plugins[0].version`
+
+If any of these are out of sync, the marketplace will think the installed version is current and refuse to update.
+
 ## Distribution
 
 ```bash
