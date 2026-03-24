@@ -87,13 +87,13 @@ The config also shows the **auto-detected model and token limit** from your acti
 
 Run Smart Compact on demand — extracts full conversation history, strips tool calls, tool results, thinking blocks, and system messages. Typically achieves 70-90% reduction. Same compaction engine as the automatic warning.
 
-After running the command, type anything to confirm. Then `/clear` to apply.
+After running, type `/clear` to apply the compaction.
 
 ### `/context-guardian:prune`
 
-Run Keep Recent on demand — drops oldest messages, keeps the last 20 only. Good when only recent work matters.
+Run Keep Recent on demand — drops oldest messages, keeps the last 20 meaningful text messages (tool-only assistant turns don't count). Good when only recent work matters.
 
-After running the command, type anything to confirm. Then `/clear` to apply.
+After running, type `/clear` to apply the compaction.
 
 ---
 
@@ -243,7 +243,7 @@ Your original message is saved. You don't need to retype it.
 
 **Option 2 — Smart Compact:** Extracts your full conversation history, strips internal noise (tool calls, tool results, thinking blocks, system messages), and creates a clean markdown checkpoint. Keeps only the substance — your messages and Claude's text responses. Typically achieves 70-90% reduction.
 
-**Option 3 — Keep Recent:** Takes the last 20 messages and discards everything older. Good when only recent work matters.
+**Option 3 — Keep Recent:** Takes the last 20 meaningful text messages (tool-only assistant turns don't count) and discards everything older. Good when only recent work matters.
 
 **Option 4 — Clear:** Wipes everything. Start completely fresh. No checkpoint saved.
 
@@ -298,7 +298,7 @@ context-guardian/
   hooks/
     submit.mjs            # UserPromptSubmit — main logic
     session-start.mjs     # SessionStart — flag cleanup
-    stop.mjs              # Stop — session end logging
+    stop.mjs              # Stop — writes fresh token state after each response
   lib/
     paths.mjs             # Centralized path resolution (CLAUDE_PLUGIN_DATA)
     logger.mjs            # Shared logging
@@ -322,7 +322,7 @@ context-guardian/
 |------|-------|---------|
 | `submit.mjs` | `UserPromptSubmit` | Main logic — monitors usage, shows menu, handles compaction, resume, cooldown |
 | `session-start.mjs` | `SessionStart` | Cleans up session flags, stale resume/cooldown files |
-| `stop.mjs` | `Stop` | Logs session end. Token state is written by the submit hook. |
+| `stop.mjs` | `Stop` | Writes fresh token state after each assistant response. Also written by submit hook before each turn. |
 
 ### Why Skills Can't Replace Hooks
 
@@ -337,11 +337,13 @@ Context Guardian uses **both**: hooks for the automatic monitoring and blocking,
 
 ### Token Counting
 
-Two methods, preferring the more accurate:
+Two methods, preferring the more accurate. State is written by **both** the submit hook (before the response) and the stop hook (after the response), so `/context-guardian:status` always reflects the latest counts.
 
 1. **Real counts (preferred):** Reads `message.usage` from the most recent assistant message in the transcript JSONL. Calculates `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`. Also detects the model name for auto-detecting max_tokens.
 
 2. **Byte estimation (fallback):** Only used on the very first message of a session (before any assistant response). Counts content bytes after the most recent compact marker and divides by 4.
+
+3. **Post-compaction estimates:** After compaction or checkpoint restore, a state file is written with estimated post-compaction token counts so `/context-guardian:status` works immediately — no need to send a message first.
 
 ### Model Auto-Detection
 

@@ -16,7 +16,7 @@ context-guardian/
   hooks/
     submit.mjs                     # UserPromptSubmit — main logic
     session-start.mjs              # SessionStart — flag cleanup
-    stop.mjs                       # Stop — session logging
+    stop.mjs                       # Stop — writes fresh token state after each response
   lib/
     paths.mjs                      # Centralized path resolution (CLAUDE_PLUGIN_DATA)
     logger.mjs                     # Shared logging
@@ -70,18 +70,18 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
    - Write flags (`cg-warned`, `cg-menu`, `cg-prompt`)
    - Return `decision: "block"` with the menu
 4. If `pct < threshold` → clear warned flag (so it can re-fire later)
-5. Messages starting with `/` always bypass the hook (slash commands never blocked)
+5. Messages starting with `/` bypass the hook (but if a reload checkpoint is pending, a state file preview is written so `/context-guardian:status` works)
 6. Menu reply (1/2/3/4):
    - **1 Continue** — clear warned flag, set 2-min cooldown, replay original prompt via `additionalContext`
    - **2 Smart Compact** — extract full history, save checkpoint, show stats via `decision: "block"`, set cooldown
-   - **3 Keep Recent** — take last 20 messages, save checkpoint, show stats via `decision: "block"`, set cooldown
+   - **3 Keep Recent** — take last 20 text messages (tool-only turns excluded), save checkpoint, show stats via `decision: "block"`, set cooldown
    - **4 Clear** — tell user to `/clear`, set cooldown
 7. After compaction (2/3): user types `/clear`, checkpoint auto-restores. Typing `resume` replays original prompt.
 8. Cooldown (2 min) prevents re-trigger after compaction or continue. Cleared on `/clear` restore and new sessions.
 
 ## Manual Compact (skills)
 
-The submit hook detects `/context-guardian:compact` and `/context-guardian:prune` directly from the prompt and runs compaction immediately — no intermediate flag file or extra user message needed. The skill SKILL.md files are no-ops (kept for discoverability). Same compaction engine as the warning menu options 2/3.
+The submit hook detects `/context-guardian:compact` and `/context-guardian:prune` directly from the prompt and runs compaction immediately — no intermediate flag file or extra user message needed. The skill SKILL.md files instruct Claude to display the stats from `additionalContext`. Same compaction engine as the warning menu options 2/3. Manual compactions use `additionalContext` (not `decision: "block"`) so Claude Code doesn't show "Original prompt:".
 
 No original prompt stored (manual trigger, not blocking a message).
 
@@ -96,8 +96,9 @@ No original prompt stored (manual trigger, not blocking a message).
 
 ## Token Counting
 
-1. **Real counts (preferred):** Submit hook reads `message.usage` from the most recent assistant message in the transcript JSONL (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) and writes the result to `state.json`.
+1. **Real counts (preferred):** Both the submit and stop hooks read `message.usage` from the most recent assistant message in the transcript JSONL (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) and write the result to `state-{session_id}.json`. The stop hook runs after each response, so state is always up-to-date.
 2. **Byte estimation (fallback):** Content bytes after the last compact marker, divided by 4.
+3. **Post-compaction estimates:** After compaction or reload injection, a state file is written with estimated token counts so `/context-guardian:status` works immediately.
 
 ## Testing
 
