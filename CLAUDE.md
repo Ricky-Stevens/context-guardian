@@ -81,7 +81,7 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 
 ## Manual Compact (skills)
 
-`/context-guardian:compact` writes `smart` to the `cg-compact-{session_id}` flag. `/context-guardian:prune` writes `recent`. On the next user message, submit hook reads the mode from the flag and runs the compaction immediately — same engine as the warning menu options 2/3.
+The submit hook detects `/context-guardian:compact` and `/context-guardian:prune` directly from the prompt and runs compaction immediately — no intermediate flag file or extra user message needed. The skill SKILL.md files are no-ops (kept for discoverability). Same compaction engine as the warning menu options 2/3.
 
 No original prompt stored (manual trigger, not blocking a message).
 
