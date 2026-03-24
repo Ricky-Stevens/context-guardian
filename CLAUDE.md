@@ -132,7 +132,7 @@ Each line is a JSON object. Relevant `type` values: `user`, `assistant`, `system
 /plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
 /plugin install context-guardian
 
-# Update (re-run install, then start new session)
-/plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
+# Update (uninstall + reinstall, then start new session)
+/plugin uninstall context-guardian
 /plugin install context-guardian
 ```
