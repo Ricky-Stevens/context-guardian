@@ -345,7 +345,7 @@ describe("full compaction round-trip", () => {
 		assert.equal(reload.original_prompt, "implement the search feature");
 		assert.equal(reload.mode, "smart");
 
-		// Step 3: Simulate fresh session after /clear — new transcript, no assistant msgs
+		// Step 3: Simulate fresh session after /clear — new session_id, new transcript
 		const freshTranscript = path.join(tmpDir, "fresh-transcript.jsonl");
 		fs.writeFileSync(
 			freshTranscript,
@@ -355,6 +355,7 @@ describe("full compaction round-trip", () => {
 		const injectResult = runHook({
 			prompt: "hello after clear",
 			transcript_path: freshTranscript,
+			session_id: "fresh-session-5678",
 		});
 
 		// Step 4: Verify injection contains the conversation
@@ -383,10 +384,10 @@ describe("full compaction round-trip", () => {
 
 		runHook({ prompt: "2" });
 
-		// Step 2: Simulate reload (creates resume file)
+		// Step 2: Simulate reload in fresh session (creates resume file)
 		const freshTranscript = path.join(tmpDir, "fresh2.jsonl");
 		fs.writeFileSync(freshTranscript, JSON.stringify(makeUser("hello")) + "\n");
-		runHook({ prompt: "hello", transcript_path: freshTranscript });
+		runHook({ prompt: "hello", transcript_path: freshTranscript, session_id: "fresh-session-5678" });
 
 		// Step 3: Verify resume file exists with correct prompt
 		const resumeFile = path.join(dataDir, `resume-${cwdH}.json`);
