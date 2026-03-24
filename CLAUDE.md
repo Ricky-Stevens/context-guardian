@@ -5,7 +5,7 @@
 A Claude Code **plugin** that monitors context window usage and intervenes before quality degrades. Installed from GitHub with `/plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
 /plugin install context-guardian`.
 
-Three hooks + three skills + a shared library.
+Three hooks + four skills + a shared library.
 
 ## Plugin Structure
 
@@ -29,6 +29,7 @@ context-guardian/
     status/SKILL.md                # /context-guardian:status
     config/SKILL.md                # /context-guardian:config
     compact/SKILL.md               # /context-guardian:compact
+    prune/SKILL.md                 # /context-guardian:prune
 ```
 
 ## Key Paths
@@ -58,9 +59,8 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 | `/context-guardian:config threshold 0.50` | Change threshold |
 | `/context-guardian:config max_tokens 1000000` | Change max tokens |
 | `/context-guardian:config reset` | Reset to defaults |
-| `/context-guardian:compact` | Show manual compaction options |
-| `/context-guardian:compact smart` | Run Smart Compact on demand |
-| `/context-guardian:compact recent` | Run Keep Recent 20 on demand |
+| `/context-guardian:compact` | Run Smart Compact on demand |
+| `/context-guardian:prune` | Run Keep Recent 20 on demand |
 
 ## How The Warning Hook Works
 
@@ -79,9 +79,9 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 7. After compaction (2/3): user types `/clear`, checkpoint auto-restores. Typing `resume` replays original prompt.
 8. Cooldown (2 min) prevents re-trigger after compaction or continue. Cleared on `/clear` restore and new sessions.
 
-## Manual Compact (skill)
+## Manual Compact (skills)
 
-`/context-guardian:compact` shows a 1/2 menu. User picks an option, submit hook intercepts via `cg-compact-{session_id}` flag and runs the compaction — same engine as the warning menu options 2/3.
+`/context-guardian:compact` writes `smart` to the `cg-compact-{session_id}` flag. `/context-guardian:prune` writes `recent`. On the next user message, submit hook reads the mode from the flag and runs the compaction immediately — same engine as the warning menu options 2/3.
 
 No original prompt stored (manual trigger, not blocking a message).
 

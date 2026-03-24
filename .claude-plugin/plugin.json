@@ -15,7 +15,8 @@
   "skills": {
     "status": "./skills/status/SKILL.md",
     "config": "./skills/config/SKILL.md",
-    "compact": "./skills/compact/SKILL.md"
+    "compact": "./skills/compact/SKILL.md",
+    "prune": "./skills/prune/SKILL.md"
   },
 
   "hooks": {

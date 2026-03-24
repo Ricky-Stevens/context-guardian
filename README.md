@@ -86,22 +86,15 @@ The config also shows the **auto-detected model and token limit** from your acti
 
 ### `/context-guardian:compact`
 
-Manually trigger compaction without waiting for the threshold warning:
+Run Smart Compact on demand — extracts full conversation history, strips tool calls, tool results, thinking blocks, and system messages. Typically achieves 70-90% reduction. Same compaction engine as the automatic warning.
 
-```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────
-│  Context Guardian — Manual Compact
-│
-│  1  Smart Compact     full history, strip tool noise
-│  2  Keep Recent       last 20 messages only
-│  0  Cancel
-│
-│  Reply with 1, 2, or 0.
-│
-└──────────────────────────────────────────────────────────────────────────────────────────────────
-```
+After running the command, type anything to confirm. Then `/clear` to apply.
 
-Same compaction engine as the automatic warning, but on demand.
+### `/context-guardian:prune`
+
+Run Keep Recent on demand — drops oldest messages, keeps the last 20 only. Good when only recent work matters.
+
+After running the command, type anything to confirm. Then `/clear` to apply.
 
 ---
 
@@ -319,6 +312,7 @@ context-guardian/
     status/SKILL.md       # /context-guardian:status
     config/SKILL.md       # /context-guardian:config
     compact/SKILL.md      # /context-guardian:compact
+    prune/SKILL.md        # /context-guardian:prune
   package.json
   README.md
 ```
@@ -374,7 +368,7 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 
 The `{hash}` suffix is a short SHA-256 of the project directory, ensuring multiple simultaneous sessions in different projects don't interfere.
 
-Session-scoped flags (`cg-warned`, `cg-menu`, `cg-prompt`, `cg-compact`) live in the project's `.claude/` directory. These are cleaned up by the SessionStart hook on every new session and `/clear`.
+Session-scoped flags (`cg-warned`, `cg-menu`, `cg-prompt`, `cg-compact`) live in the project's `.claude/` directory. The `cg-compact` flag contains the compaction mode (`smart` or `recent`). These are cleaned up by the SessionStart hook on every new session and `/clear`.
 
 ---
 
