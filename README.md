@@ -359,7 +359,7 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 | File | Purpose |
 |------|---------|
 | `config.json` | Threshold and max_tokens override |
-| `state.json` | Latest token counts, model, transcript path |
+| `state-{session_id}.json` | Latest token counts, model, transcript path (session-scoped) |
 | `reload-{hash}.json` | Triggers checkpoint injection after `/clear` (project-scoped) |
 | `resume-{hash}.json` | Stores original prompt for `resume` replay (project-scoped) |
 | `cooldown-{hash}.json` | Prevents warning re-trigger for 2 minutes (project-scoped) |

@@ -37,7 +37,7 @@ context-guardian/
 | Path | Purpose |
 |------|---------|
 | `${CLAUDE_PLUGIN_DATA}/config.json` | Config (threshold, max_tokens) |
-| `${CLAUDE_PLUGIN_DATA}/state.json` | Real token counts from submit hook |
+| `${CLAUDE_PLUGIN_DATA}/state-{session_id}.json` | Real token counts (written by both submit and stop hooks) |
 | `${CLAUDE_PLUGIN_DATA}/reload-{hash}.json` | Checkpoint injection trigger after /clear (project-scoped) |
 | `${CLAUDE_PLUGIN_DATA}/resume-{hash}.json` | Original prompt for `resume` replay (project-scoped) |
 | `${CLAUDE_PLUGIN_DATA}/checkpoints/` | Saved compaction checkpoints |

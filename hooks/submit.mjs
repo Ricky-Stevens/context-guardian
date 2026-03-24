@@ -593,6 +593,7 @@ log(
 );
 
 // Write state so /context-guardian:status can read it (session-scoped).
+// Also written by the stop hook after each response for fresher counts.
 // Pre-compute values so the status skill just reads and formats — no arithmetic.
 const headroom = Math.max(0, Math.round(maxTokens * threshold - currentTokens));
 const pctDisplay = (pct * 100).toFixed(1);
