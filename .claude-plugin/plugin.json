@@ -12,12 +12,7 @@
   "category": "productivity",
   "tags": ["context-management", "smart-compact", "token-monitoring"],
 
-  "skills": {
-    "status": "./skills/status/SKILL.md",
-    "config": "./skills/config/SKILL.md",
-    "compact": "./skills/compact/SKILL.md",
-    "prune": "./skills/prune/SKILL.md"
-  },
+  "skills": "./skills/",
 
   "hooks": {
     "SessionStart": [
