@@ -2,7 +2,8 @@
 
 ## What This Project Is
 
-A Claude Code **plugin** that monitors context window usage and intervenes before quality degrades. Installed from GitHub with `claude plugin install --source github Ricky-Stevens/context-guardian`.
+A Claude Code **plugin** that monitors context window usage and intervenes before quality degrades. Installed from GitHub with `/plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
+/plugin install context-guardian`.
 
 Three hooks + three skills + a shared library.
 
@@ -128,8 +129,10 @@ Each line is a JSON object. Relevant `type` values: `user`, `assistant`, `system
 
 ```bash
 # Install from GitHub
-claude plugin install --source github Ricky-Stevens/context-guardian
+/plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
+/plugin install context-guardian
 
 # Update (re-run install, then start new session)
-claude plugin install --source github Ricky-Stevens/context-guardian
+/plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
+/plugin install context-guardian
 ```
