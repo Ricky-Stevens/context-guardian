@@ -183,6 +183,16 @@ Includes a re-read guardrail: "You have NOT read any files in this session — r
 ## Testing
 
 ```bash
+# Run all tests (314 tests across 10 files)
+bun test
+
+# Key test files:
+# test/tool-summary.test.mjs   — 71 tests for per-tool summarisation rules
+# test/trim.test.mjs           — 84 tests for trim utilities
+# test/compaction-e2e.test.mjs — 24 tests: realistic transcript with tracked facts
+# test/transcript.test.mjs     — extractConversation + extractRecent
+# test/submit.test.mjs         — hook integration tests
+
 # Local plugin testing
 claude --plugin-dir /path/to/context-guardian
 
@@ -199,12 +209,16 @@ rm -f <project-dir>/.claude/cg-*
 tail -f ~/.claude/logs/context-guardian.log
 ```
 
+The e2e test (`compaction-e2e.test.mjs`) creates a 26-turn coding session with 19 specific trackable facts (edit diffs, bash output, user decisions, error messages, etc.) and 5 noise items. It verifies every fact survives extraction and all noise is removed. If any future change drops a fact, the test names the exact fact lost.
+
 ## Transcript JSONL Format
 
 Each line is a JSON object. Relevant `type` values: `user`, `assistant`, `system`, `progress`.
 
-- User message: `message.content` is string or array of content blocks
-- Assistant message: `message.content` is array — extractConversation keeps only `type: "text"` blocks
+- User message: `message.content` is string or array of content blocks (text, tool_result, image, document)
+- Assistant message: `message.content` is array of content blocks (text, tool_use, thinking, redacted_thinking, image, document)
+- Tool results appear in user-type messages as `tool_result` blocks with `tool_use_id` linking back to the assistant's `tool_use`
+- The extraction engine processes content blocks in array order, maintaining a `Map<tool_use_id, {name, input}>` to classify tool results by their originating tool
 
 ## Versioning
 
