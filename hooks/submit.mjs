@@ -1,19 +1,31 @@
 #!/usr/bin/env node
+/**
+ * UserPromptSubmit hook — Context Guardian's main entry point.
+ *
+ * Runs on every user message. Handles (in order):
+ * 1. Manual compaction commands (/context-guardian:compact, :prune)
+ * 2. Warning menu responses (1-4, 0/cancel)
+ * 3. Resume detection ("resume" after /clear)
+ * 4. Slash command bypass
+ * 5. Checkpoint reload after /clear
+ * 6. Token usage check + threshold warning
+ *
+ * Heavy logic is delegated to lib/checkpoint.mjs and lib/reload-handler.mjs.
+ *
+ * @module submit-hook
+ */
 import fs from "node:fs";
-import path from "node:path";
+import { performCompaction, writeCompactionState } from "../lib/checkpoint.mjs";
 import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
-	CHECKPOINTS_DIR,
 	ensureDataDir,
 	projectStateFiles,
-	rotateCheckpoints,
 	sessionFlags,
 	stateFile,
 } from "../lib/paths.mjs";
-import { formatCompactionStats } from "../lib/stats.mjs";
+import { handleReload, handleResume } from "../lib/reload-handler.mjs";
 import { estimateTokens, getTokenUsage } from "../lib/tokens.mjs";
-import { extractConversation, extractRecent } from "../lib/transcript.mjs";
 
 // ---------------------------------------------------------------------------
 // Input
@@ -36,68 +48,8 @@ function output(obj) {
 	process.stdout.write(JSON.stringify(obj));
 }
 
-/** Check if extracted content has actual conversation data, not just headers/empty. */
-function hasExtractedContent(text) {
-	return (
-		text &&
-		text !== "(no transcript available)" &&
-		text.length > 50 &&
-		(text.includes("**User:**") || text.includes("**Assistant:**"))
-	);
-}
-
-/**
- * Cap checkpoint content to prevent oversized additionalContext injections.
- * Limits to ~25% of context window (maxChars ≈ max_tokens, since 1 token ≈ 4 chars).
- * Trims at the nearest message boundary to avoid cutting mid-sentence.
- */
-function capCheckpointContent(content, maxTokens) {
-	const maxChars = Math.max(20000, maxTokens || 200000);
-	if (content.length <= maxChars) return content;
-	const truncated = content.slice(0, maxChars);
-	const lastSep = truncated.lastIndexOf("\n\n---\n\n");
-	const cutPoint = lastSep > maxChars * 0.5 ? lastSep : maxChars;
-	log(
-		`checkpoint-truncated original=${content.length} capped=${cutPoint} max=${maxChars}`,
-	);
-	return (
-		truncated.slice(0, cutPoint) +
-		"\n\n> [Checkpoint truncated — oldest messages removed to fit within context window limits]"
-	);
-}
-
 // ---------------------------------------------------------------------------
-// Helper — write state file with post-compaction estimates
-// ---------------------------------------------------------------------------
-function writeCompactionState(tokens, max, rec) {
-	try {
-		const c = loadConfig();
-		const th = c.threshold ?? 0.35;
-		const p = tokens / max;
-		ensureDataDir();
-		fs.writeFileSync(
-			stateFile(session_id),
-			JSON.stringify({
-				current_tokens: tokens,
-				max_tokens: max,
-				pct: p,
-				pct_display: (p * 100).toFixed(1),
-				threshold: th,
-				threshold_display: Math.round(th * 100),
-				headroom: Math.max(0, Math.round(max * th - tokens)),
-				recommendation: rec,
-				source: "estimated",
-				model: "unknown",
-				session_id,
-				transcript_path,
-				ts: Date.now(),
-			}),
-		);
-	} catch {}
-}
-
-// ---------------------------------------------------------------------------
-// Handle manual compact — direct skill command OR legacy flag file
+// 1. Manual compact — direct skill command OR legacy flag file
 // ---------------------------------------------------------------------------
 let cMode = null;
 if (fs.existsSync(flags.compactMenu)) {
@@ -120,26 +72,16 @@ if (cMode) {
 		process.exit(0);
 	}
 
-	const cLabel = cMode === "smart" ? "Smart Compact" : "Keep Recent 20";
 	log(`manual-compact mode=${cMode} session=${session_id}`);
+	const result = performCompaction({
+		mode: cMode,
+		transcriptPath: transcript_path,
+		sessionId: session_id,
+		originalPrompt: "",
+		reloadPath: pState.reload,
+	});
 
-	ensureDataDir();
-	fs.mkdirSync(CHECKPOINTS_DIR, { recursive: true });
-	const cStamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-	const cExportFile = path.join(
-		CHECKPOINTS_DIR,
-		`session-${cStamp}-${session_id.slice(0, 8)}.md`,
-	);
-
-	const cMaxTokens =
-		getTokenUsage(transcript_path)?.max_tokens || resolveMaxTokens() || 200000;
-	let cContent =
-		cMode === "smart"
-			? extractConversation(transcript_path)
-			: extractRecent(transcript_path, 20);
-	cContent = capCheckpointContent(cContent, cMaxTokens);
-
-	if (!hasExtractedContent(cContent)) {
+	if (!result) {
 		log(`manual-compact-empty mode=${cMode} session=${session_id}`);
 		output({
 			hookSpecificOutput: {
@@ -150,51 +92,12 @@ if (cMode) {
 		process.exit(0);
 	}
 
-	fs.writeFileSync(
-		cExportFile,
-		`# Context Checkpoint (${cLabel})\n> Created: ${new Date().toISOString()}\n\n${cContent}`,
-	);
-
-	// Get current token counts for stats
-	const cUsage = getTokenUsage(transcript_path);
-	const cPreTokens = cUsage
-		? cUsage.current_tokens
-		: estimateTokens(transcript_path);
-	const cPreMax = cUsage?.max_tokens || resolveMaxTokens();
-	const cFull = fs.readFileSync(cExportFile, "utf8");
-	const { stats: cStats, block: cStatsBlock } = formatCompactionStats(
-		cPreTokens,
-		cPreMax,
-		cFull,
-		{ hasOriginalPrompt: false },
-	);
-
-	// Write reload flag (no original_prompt — manual compact, not blocking a message)
-	fs.writeFileSync(
-		pState.reload,
-		JSON.stringify({
-			checkpoint_path: cExportFile,
-			original_prompt: "",
-			ts: Date.now(),
-			stats: cStats,
-			mode: cMode,
-			created_session: session_id,
-		}),
-	);
-
-	log(
-		`manual-compact-saved mode=${cMode} file=${cExportFile} pre=${cPreTokens} post=${cStats.postTokens} saved=${cStats.saved}`,
-	);
-	rotateCheckpoints();
-
 	output({
 		hookSpecificOutput: {
 			hookEventName: "UserPromptSubmit",
-			additionalContext: `[Context Guardian] Manual compaction complete.\n\n${cStatsBlock}\n\nDisplay the stats box above verbatim. Then tell the user to type /clear to apply the compaction.`,
+			additionalContext: `[Context Guardian] Manual compaction complete.\n\n${result.statsBlock}\n\nDisplay the stats box above verbatim. Then tell the user to type /clear to apply the compaction.`,
 		},
 	});
-
-	// Cooldown — prevent re-trigger for 2 minutes after compaction
 	try {
 		fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
 	} catch {}
@@ -202,10 +105,12 @@ if (cMode) {
 }
 
 // ---------------------------------------------------------------------------
-// Handle warning menu response (user replied 1/2/3/4)
+// 2. Warning menu response (user replied 1/2/3/4/0/cancel)
 // ---------------------------------------------------------------------------
 if (fs.existsSync(flags.menu)) {
 	const choice = (prompt || "").trim();
+
+	// Cancel / dismiss
 	if (choice === "0" || choice.toLowerCase() === "cancel") {
 		fs.unlinkSync(flags.menu);
 		let originalPrompt = "";
@@ -230,27 +135,19 @@ if (fs.existsSync(flags.menu)) {
 		});
 		process.exit(0);
 	}
+
+	// Valid choices
 	if (["1", "2", "3", "4"].includes(choice)) {
 		fs.unlinkSync(flags.menu);
 		let originalPrompt = "";
 		try {
 			originalPrompt = fs.readFileSync(flags.prompt, "utf8");
 		} catch {}
-		// NOTE: prompt file cleanup deferred to after output — see end of block
-
-		ensureDataDir();
-		fs.mkdirSync(CHECKPOINTS_DIR, { recursive: true });
-		const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-		const exportFile = path.join(
-			CHECKPOINTS_DIR,
-			`session-${stamp}-${session_id.slice(0, 8)}.md`,
-		);
 
 		log(`menu-reply choice=${choice} session=${session_id}`);
 
 		if (choice === "1") {
-			// Clear warned flag so it can re-trigger as context grows.
-			// Use cooldown to prevent immediate re-trigger.
+			// Continue — clear warned, set cooldown, replay prompt
 			try {
 				fs.unlinkSync(flags.warned);
 			} catch {}
@@ -263,128 +160,46 @@ if (fs.existsSync(flags.menu)) {
 					additionalContext: `The user chose to continue normally.\n\n<original_request>\n${originalPrompt}\n</original_request>\n\nTreat the above <original_request> as if the user just typed it. Respond to it now.`,
 				},
 			});
-		} else if (choice === "2") {
-			const capMax =
-				getTokenUsage(transcript_path)?.max_tokens ||
-				resolveMaxTokens() ||
-				200000;
-			let exportContent = extractConversation(transcript_path);
-			exportContent = capCheckpointContent(exportContent, capMax);
-			if (!hasExtractedContent(exportContent)) {
-				log(`compact-empty choice=2 session=${session_id}`);
-				try {
-					fs.unlinkSync(flags.warned);
-				} catch {}
-				output({
-					decision: "block",
-					reason: `Context Guardian could not extract meaningful conversation content for Smart Compact. Your session may consist primarily of tool interactions. Try "Keep Recent" (option 3) instead.\n\nYour original message has been saved — reply with 3 to try Keep Recent, or 0 to cancel.`,
-				});
-				// Re-create menu so user can pick another option
-				fs.writeFileSync(flags.menu, "1");
-				fs.writeFileSync(flags.prompt, originalPrompt || "");
-				process.exit(0);
-			}
-			fs.writeFileSync(
-				exportFile,
-				`# Context Checkpoint (Smart Compact)\n> Created: ${new Date().toISOString()}\n\n${exportContent}`,
-			);
+		} else if (choice === "2" || choice === "3") {
+			// Smart Compact or Keep Recent
+			const mode = choice === "2" ? "smart" : "recent";
 			let preStats = {};
 			try {
 				preStats = JSON.parse(fs.readFileSync(flags.warned, "utf8"));
 			} catch {}
-			const preTokens =
-				preStats.currentTokens || estimateTokens(transcript_path);
-			const preMax = preStats.maxTokens || resolveMaxTokens();
-			const fullCheckpoint = fs.readFileSync(exportFile, "utf8");
-			const { stats, block: statsBlock } = formatCompactionStats(
-				preTokens,
-				preMax,
-				fullCheckpoint,
-				{ hasOriginalPrompt: !!originalPrompt },
-			);
-			fs.writeFileSync(
-				pState.reload,
-				JSON.stringify({
-					checkpoint_path: exportFile,
-					original_prompt: originalPrompt,
-					ts: Date.now(),
-					stats,
-					mode: "smart",
-					created_session: session_id,
-				}),
-			);
-			try {
-				fs.unlinkSync(flags.warned);
-			} catch {}
-			rotateCheckpoints();
-			log(
-				`checkpoint-saved choice=2 file=${exportFile} pre=${preTokens} post=${stats.postTokens} saved=${stats.saved}`,
-			);
-			output({
-				decision: "block",
-				reason: statsBlock,
+
+			const result = performCompaction({
+				mode,
+				transcriptPath: transcript_path,
+				sessionId: session_id,
+				originalPrompt,
+				reloadPath: pState.reload,
+				preStats,
 			});
-		} else if (choice === "3") {
-			const capMax3 =
-				getTokenUsage(transcript_path)?.max_tokens ||
-				resolveMaxTokens() ||
-				200000;
-			let recentContent = extractRecent(transcript_path, 20);
-			recentContent = capCheckpointContent(recentContent, capMax3);
-			if (!hasExtractedContent(recentContent)) {
-				log(`compact-empty choice=3 session=${session_id}`);
+
+			if (!result) {
+				log(`compact-empty choice=${choice} session=${session_id}`);
 				try {
 					fs.unlinkSync(flags.warned);
 				} catch {}
+				const alt = choice === "2" ? "3" : "1";
+				const altName =
+					choice === "2" ? "Keep Recent" : "continue without compacting";
 				output({
 					decision: "block",
-					reason: `Context Guardian could not extract meaningful conversation content for Keep Recent. Your session may consist primarily of tool interactions. Consider using /clear to start fresh.\n\nYour original message has been saved — reply with 1 to continue without compacting, or 0 to cancel.`,
+					reason: `Context Guardian could not extract meaningful conversation content. Try option ${alt} (${altName}) instead.\n\nYour original message has been saved — reply with ${alt}, or 0 to cancel.`,
 				});
 				fs.writeFileSync(flags.menu, "1");
 				fs.writeFileSync(flags.prompt, originalPrompt || "");
 				process.exit(0);
 			}
-			fs.writeFileSync(
-				exportFile,
-				`# Context Checkpoint (Keep Recent 20)\n> Created: ${new Date().toISOString()}\n\n${recentContent}`,
-			);
-			let preStats3 = {};
-			try {
-				preStats3 = JSON.parse(fs.readFileSync(flags.warned, "utf8"));
-			} catch {}
-			const preTokens3 =
-				preStats3.currentTokens || estimateTokens(transcript_path);
-			const preMax3 = preStats3.maxTokens || resolveMaxTokens();
-			const fullCheckpoint3 = fs.readFileSync(exportFile, "utf8");
-			const { stats: stats3, block: statsBlock3 } = formatCompactionStats(
-				preTokens3,
-				preMax3,
-				fullCheckpoint3,
-				{ hasOriginalPrompt: !!originalPrompt },
-			);
-			fs.writeFileSync(
-				pState.reload,
-				JSON.stringify({
-					checkpoint_path: exportFile,
-					original_prompt: originalPrompt,
-					ts: Date.now(),
-					stats: stats3,
-					mode: "recent",
-					created_session: session_id,
-				}),
-			);
+
 			try {
 				fs.unlinkSync(flags.warned);
 			} catch {}
-			rotateCheckpoints();
-			log(
-				`checkpoint-saved choice=3 file=${exportFile} pre=${preTokens3} post=${stats3.postTokens} saved=${stats3.saved}`,
-			);
-			output({
-				decision: "block",
-				reason: statsBlock3,
-			});
+			output({ decision: "block", reason: result.statsBlock });
 		} else if (choice === "4") {
+			// Clear — wipe everything
 			try {
 				fs.unlinkSync(flags.warned);
 			} catch {}
@@ -394,19 +209,17 @@ if (fs.existsSync(flags.menu)) {
 			});
 		}
 
-		// Cooldown — prevent re-trigger for 2 minutes after any compaction
+		// Cooldown for compaction/clear choices
 		if (["2", "3", "4"].includes(choice)) {
 			try {
 				fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
 			} catch {}
 		}
-
-		// Clean up prompt file now that all work is done
 		try {
 			fs.unlinkSync(flags.prompt);
 		} catch {}
 	} else {
-		// Invalid choice — re-show the menu
+		// Invalid choice — re-show menu
 		log(`menu-invalid choice="${choice}" session=${session_id}`);
 		output({
 			decision: "block",
@@ -417,54 +230,12 @@ if (fs.existsSync(flags.menu)) {
 }
 
 // ---------------------------------------------------------------------------
-// Resume detection — replay original prompt after /clear + checkpoint restore
+// 3. Resume detection
 // ---------------------------------------------------------------------------
-if (fs.existsSync(pState.resume)) {
-	const resumeInput = (prompt || "").trim().toLowerCase();
-	if (resumeInput === "resume") {
-		try {
-			const resumeData = JSON.parse(fs.readFileSync(pState.resume, "utf8"));
-			fs.unlinkSync(pState.resume);
-			if (
-				resumeData.original_prompt &&
-				Date.now() - resumeData.ts < 2 * 60 * 1000
-			) {
-				log(
-					`resume-replay session=${session_id} prompt="${resumeData.original_prompt.slice(0, 50)}"`,
-				);
-				output({
-					hookSpecificOutput: {
-						hookEventName: "UserPromptSubmit",
-						additionalContext: `The user typed "resume" to continue from where they left off before context compaction.\n\n<original_request>\n${resumeData.original_prompt}\n</original_request>\n\nTreat the above <original_request> as if the user just typed it. Respond to it now.`,
-					},
-				});
-				process.exit(0);
-			}
-			// Expired or no prompt — tell the user
-			const ts = resumeData.ts || 0;
-			const ageStr =
-				ts > 0
-					? `${Math.round((Date.now() - ts) / 60000)} minutes old`
-					: "of unknown age";
-			log(`resume-expired session=${session_id} age=${ageStr}`);
-			output({
-				decision: "block",
-				reason: `Resume expired — the saved prompt is ${ageStr} (limit: 2 minutes). Your original message has been discarded. Please retype your request.`,
-			});
-			process.exit(0);
-		} catch (e) {
-			log(`resume-error: ${e.message}`);
-			output({
-				decision: "block",
-				reason: `Resume failed — the saved prompt data was corrupted. Please retype your request.`,
-			});
-			process.exit(0);
-		}
-	}
-}
+if (handleResume(prompt, session_id, pState, output)) process.exit(0);
 
 // ---------------------------------------------------------------------------
-// Bypass slash commands (but write state preview if reload pending)
+// 4. Slash command bypass (but write state preview if reload pending)
 // ---------------------------------------------------------------------------
 const trimmed = (prompt || "").trim().toLowerCase();
 if (trimmed.startsWith("/")) {
@@ -475,6 +246,8 @@ if (trimmed.startsWith("/")) {
 				const pt = rl.stats.postTokens || 0;
 				const pm = rl.stats.maxTokens || resolveMaxTokens() || 200000;
 				writeCompactionState(
+					session_id,
+					transcript_path,
 					pt,
 					pm,
 					"Context checkpoint ready — send a message to restore.",
@@ -486,134 +259,22 @@ if (trimmed.startsWith("/")) {
 }
 
 // ---------------------------------------------------------------------------
-// Reload detection — inject checkpoint after /clear
+// 5. Reload detection — inject checkpoint after /clear
 // ---------------------------------------------------------------------------
-if (fs.existsSync(pState.reload)) {
-	try {
-		const reload = JSON.parse(fs.readFileSync(pState.reload, "utf8"));
-		if (Date.now() - reload.ts < 10 * 60 * 1000) {
-			// Guard: only inject into a different session (post-/clear).
-			// If created_session matches, user hasn't /cleared yet.
-			if (reload.created_session === session_id) {
-				log(
-					`reload-skip session=${session_id} — same session that created the compaction`,
-				);
-				// One-time non-blocking reminder to /clear
-				if (!fs.existsSync(flags.clearReminded)) {
-					fs.mkdirSync(flags.dir, { recursive: true });
-					fs.writeFileSync(flags.clearReminded, "1");
-					output({
-						hookSpecificOutput: {
-							hookEventName: "UserPromptSubmit",
-							additionalContext:
-								"[Context Guardian] A compaction checkpoint is ready but hasn't been applied. " +
-								"Remind the user: type /clear to apply it, or continue working to dismiss. " +
-								"The checkpoint expires in 10 minutes. Process the user's message normally.",
-						},
-					});
-					process.exit(0);
-				}
-				// Don't delete the reload file — the new session after /clear needs it
-				// (fall through to normal token check)
-			} else {
-				// Fresh session — inject the checkpoint
-				if (!fs.existsSync(reload.checkpoint_path)) {
-					log(
-						`reload-error session=${session_id} — checkpoint file missing: ${reload.checkpoint_path}`,
-					);
-					fs.unlinkSync(pState.reload);
-					output({
-						decision: "block",
-						reason: `Context Guardian: checkpoint file was deleted before it could be restored. Your compacted context has been lost. Please continue with a fresh session.`,
-					});
-					process.exit(0);
-				}
-				const checkpoint = fs.readFileSync(reload.checkpoint_path, "utf8");
-				fs.unlinkSync(pState.reload);
-				try {
-					fs.unlinkSync(pState.cooldown);
-				} catch {}
-				let reloadStatsLine = "";
-				if (reload.stats) {
-					const s = reload.stats;
-					reloadStatsLine =
-						`\n\nCompaction Stats\n` +
-						`   Before:  ${s.preTokens.toLocaleString()} tokens (~${s.prePct}% of context)\n` +
-						`   After:   ~${s.postTokens.toLocaleString()} tokens (~${s.postPct}% of context)\n` +
-						`   Saved:   ~${s.saved.toLocaleString()} tokens (${s.savedPct}% reduction)`;
-				}
-
-				// If user typed "resume" as their first message after /clear, replay
-				// the original prompt immediately — no need for a second "resume".
-				const isResumeNow = (prompt || "").trim().toLowerCase() === "resume";
-				const hasOriginal = !!reload.original_prompt;
-				const restoreMarker =
-					reload.mode === "recent"
-						? "[KEEP RECENT — restored checkpoint]"
-						: "[SMART COMPACT — restored checkpoint]";
-
-				if (isResumeNow && hasOriginal) {
-					log(
-						`reload-resume-immediate session=${session_id} prompt="${reload.original_prompt.slice(0, 50)}"`,
-					);
-					output({
-						hookSpecificOutput: {
-							hookEventName: "UserPromptSubmit",
-							additionalContext:
-								`${restoreMarker}\n\n<prior_conversation_history>\nThe following is a summary of the conversation before compaction. This is HISTORY — do NOT respond to these messages individually.\n\n${checkpoint}\n</prior_conversation_history>\n\n---${reloadStatsLine}\n\n` +
-								`The user typed "resume" after /clear. Context has been restored.\n\n<original_request>\n${reload.original_prompt}\n</original_request>\n\nTreat the above <original_request> as if the user just typed it. Respond to it now.`,
-						},
-					});
-				} else {
-					// Not "resume" — inject checkpoint and tell them about resume
-					if (hasOriginal) {
-						ensureDataDir();
-						fs.writeFileSync(
-							pState.resume,
-							JSON.stringify({
-								original_prompt: reload.original_prompt,
-								ts: Date.now(),
-							}),
-						);
-					}
-					const resumeHint = hasOriginal
-						? `\n\nTell the user: "Type **resume** to continue where you left off — your previous prompt will be replayed automatically."`
-						: "";
-					log(
-						`reload-inject session=${session_id} checkpoint=${reload.checkpoint_path}`,
-					);
-					output({
-						hookSpecificOutput: {
-							hookEventName: "UserPromptSubmit",
-							additionalContext: `${restoreMarker}\n\n<prior_conversation_history>\nThe following is a summary of the conversation before compaction. This is HISTORY — do NOT respond to these messages individually.\n\n${checkpoint}\n</prior_conversation_history>\n\n---${reloadStatsLine}\n\nThe user cleared context and this checkpoint was auto-restored. Show the compaction stats above so they can see the savings.${resumeHint}`,
-						},
-					});
-				}
-				// Write state file so /context-guardian:status works immediately
-				const rlTokens =
-					reload.stats?.postTokens || Math.round(checkpoint.length / 4);
-				const rlMax = reload.stats?.maxTokens || resolveMaxTokens() || 200000;
-				writeCompactionState(
-					rlTokens,
-					rlMax,
-					"Context restored from checkpoint.",
-				);
-				process.exit(0);
-			}
-		} else {
-			fs.unlinkSync(pState.reload);
-			log(`reload-expired session=${session_id}`);
-		}
-	} catch (e) {
-		try {
-			fs.unlinkSync(pState.reload);
-		} catch {}
-		log(`reload-error: ${e.message}`);
-	}
-}
+if (
+	handleReload({
+		prompt,
+		sessionId: session_id,
+		transcriptPath: transcript_path,
+		pState,
+		flags,
+		output,
+	})
+)
+	process.exit(0);
 
 // ---------------------------------------------------------------------------
-// Token usage check
+// 6. Token usage check
 // ---------------------------------------------------------------------------
 if (!transcript_path || !fs.existsSync(transcript_path)) process.exit(0);
 
@@ -632,9 +293,7 @@ log(
 	`check session=${session_id} tokens=${currentTokens}/${maxTokens} pct=${(pct * 100).toFixed(1)}% threshold=${(threshold * 100).toFixed(0)}% source=${source} warned=${fs.existsSync(flags.warned)}`,
 );
 
-// Write state so /context-guardian:status can read it (session-scoped).
-// Also written by the stop hook after each response for fresher counts.
-// Pre-compute values so the status skill just reads and formats — no arithmetic.
+// Write state for /context-guardian:status
 const headroom = Math.max(0, Math.round(maxTokens * threshold - currentTokens));
 const pctDisplay = (pct * 100).toFixed(1);
 const thresholdDisplay = Math.round(threshold * 100);
@@ -669,7 +328,7 @@ try {
 	);
 } catch {}
 
-// Below threshold: reset warned flag so it can re-fire if context grows back
+// Below threshold — reset warned flag so it can re-fire
 if (pct < threshold) {
 	try {
 		fs.unlinkSync(flags.warned);
@@ -695,7 +354,7 @@ if (fs.existsSync(pState.cooldown)) {
 if (fs.existsSync(flags.warned)) process.exit(0);
 
 // ---------------------------------------------------------------------------
-// Show menu
+// Show warning menu
 // ---------------------------------------------------------------------------
 fs.mkdirSync(flags.dir, { recursive: true });
 fs.writeFileSync(
@@ -723,5 +382,3 @@ output({
 		`Reply with 1, 2, 3, 4, or 0.`,
 	].join("\n"),
 });
-
-process.exit(0);
