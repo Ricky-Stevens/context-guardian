@@ -1,12 +1,12 @@
 ---
-name: status
+name: stats
 description: Show current context window usage, threshold, and compaction recommendation
 context: inline
 disable-model-invocation: true
 allowed-tools: Read, Bash
 ---
 
-# Context Guardian Status
+# Context Guardian Stats
 
 Read the session-scoped state file and display the status box. Follow these steps exactly.
 
@@ -14,13 +14,13 @@ Read the session-scoped state file and display the status box. Follow these step
 
 Read the file at `${CLAUDE_PLUGIN_DATA}/state-${CLAUDE_SESSION_ID}.json`.
 
-If `${CLAUDE_PLUGIN_DATA}` is empty, use `~/.claude/context-guardian/` instead.
+If `${CLAUDE_PLUGIN_DATA}` is empty, use `~/.claude/cg/` instead.
 
 If the file does not exist, display this and stop:
 
 ```
 ┌─────────────────────────────────────────────────
-│  Context Guardian Status
+│  Context Guardian Stats
 │
 │  No data for this session.
 │  Send a non-slash-command message first so the
@@ -46,7 +46,7 @@ All values come directly from the JSON — use them as-is. Pre-computed fields: 
 
 ```
 ┌─────────────────────────────────────────────────
-│  Context Guardian Status
+│  Context Guardian Stats
 │
 │  Current usage:   {current_tokens with commas} / {max_tokens with commas} tokens ({pct_display}%)
 │  Threshold:       {threshold_display}% (triggers warning)
@@ -61,6 +61,8 @@ All values come directly from the JSON — use them as-is. Pre-computed fields: 
 └─────────────────────────────────────────────────
 ```
 
-Output ONLY this box. No extra text, explanation, or commentary before or after.
+Output ONLY this box, plus the tip line below. No extra text, explanation, or commentary.
+
+**Tip:** `/cg:compact` (smart compact) · `/cg:prune` (keep recent) · `/cg:config` (settings)
 
 $ARGUMENTS
