@@ -52,20 +52,20 @@ Context Guardian adds four slash commands:
 Check your current context window usage at any time:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────
+┌─────────────────────────────────────────────────
 │  Context Guardian Stats
 │
 │  Current usage:   372,000 / 1,000,000 tokens (37.2%)
-│  Threshold:       35% (triggers warning)
-│  Headroom:        ~628,000 tokens before warning
+│  Threshold:       35% (0% remaining to warning)
 │  Data source:     real counts
 │
-│  Max tokens:      1,000,000
+│  Model:           claude-opus-4-6 / 1,000,000 tokens
 │  Last updated:    12 seconds ago
 │
-│  Recommendation:  At threshold. Compaction recommended.
+│  /cg:compact      ~37.2% → ~5%
+│  /cg:prune        ~37.2% → ~3%
 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────
+└─────────────────────────────────────────────────
 ```
 
 Token counts are **real values** read from `message.usage` in Claude Code's transcript — not estimates.

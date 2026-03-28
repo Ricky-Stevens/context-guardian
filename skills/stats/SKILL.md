@@ -42,27 +42,25 @@ If the difference is greater than 300 seconds (5 minutes), append "(stale)" to t
 
 ## Step 3 — Display the status box
 
-All values come directly from the JSON — use them as-is. Pre-computed fields: `pct_display` (already a percentage string like "2.5"), `threshold_display` (already a whole number like "35"), `headroom`, `recommendation`.
+All values come directly from the JSON — use them as-is. Pre-computed fields: `pct_display` (already a percentage string like "2.5"), `threshold_display` (already a whole number like "35"), `smart_estimate_pct`, `recent_estimate_pct`. Compute `threshold_display - pct_display` (rounded to nearest integer) for the "remaining to warning" value.
 
 ```
 ┌─────────────────────────────────────────────────
 │  Context Guardian Stats
 │
 │  Current usage:   {current_tokens with commas} / {max_tokens with commas} tokens ({pct_display}%)
-│  Threshold:       {threshold_display}% (triggers warning)
-│  Headroom:        ~{headroom with commas} tokens before warning
+│  Threshold:       {threshold_display}% ({threshold_display - pct_display, rounded}% remaining to warning)
 │  Data source:     {source: "real" → "real counts", "estimated" → "estimated"}
 │
-│  Model:           {model}
+│  Model:           {model} / {max_tokens with commas} tokens
 │  Last updated:    {computed relative time}
 │
-│  Recommendation:  {recommendation}
+│  /cg:compact      ~{pct_display}% → ~{smart_estimate_pct}%
+│  /cg:prune        ~{pct_display}% → ~{recent_estimate_pct}%
 │
 └─────────────────────────────────────────────────
 ```
 
-Output ONLY this box, plus the tip line below. No extra text, explanation, or commentary.
-
-**Tip:** `/cg:compact` (smart compact) · `/cg:prune` (keep recent) · `/cg:config` (settings)
+Output ONLY this box. No extra text, explanation, or commentary.
 
 $ARGUMENTS

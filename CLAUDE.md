@@ -31,6 +31,7 @@ cg/
     checkpoint.mjs                 # Shared compaction pipeline, checkpoint validation
     reload-handler.mjs             # Checkpoint reload + resume after /clear
     stats.mjs                      # Compaction stats formatting
+    compact-cli.mjs                # CLI entry point for skill-triggered compaction
   skills/
     stats/SKILL.md                 # /cg:stats
     config/SKILL.md                # /cg:config
@@ -87,7 +88,9 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 
 ## Manual Compact (skills)
 
-The submit hook detects `/cg:compact` and `/cg:prune` directly from the prompt and runs compaction immediately — no intermediate flag file or extra user message needed. The skill SKILL.md files instruct Claude to display the stats from `additionalContext`. Same compaction engine as the warning menu options 2/3. Manual compactions use `additionalContext` (not `decision: "block"`) so Claude Code doesn't show "Original prompt:".
+The `/cg:compact` and `/cg:prune` skills invoke `lib/compact-cli.mjs` via Bash. This CLI entry point sets `CLAUDE_PLUGIN_DATA` from its arguments (skills don't fire `UserPromptSubmit`, so the hook path is unreachable), then calls the same `performCompaction()` pipeline used by the warning menu options 2/3. The skill SKILL.md files parse the JSON output and display the stats block.
+
+The submit hook also has `/cg:compact` detection (lines 58-61) as a fallback — this runs if a future Claude Code version fires hooks for skill commands.
 
 No original prompt stored (manual trigger, not blocking a message).
 

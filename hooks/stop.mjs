@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
+import { estimateSavings } from "../lib/estimate.mjs";
 import { log } from "../lib/logger.mjs";
 import { ensureDataDir, stateFile } from "../lib/paths.mjs";
 import { estimateTokens, getTokenUsage } from "../lib/tokens.mjs";
@@ -46,6 +47,22 @@ else
 	recommendation =
 		"At threshold. Compaction recommended — the warning menu will trigger on your next message.";
 
+// Don't overwrite a recent state file with estimated data — the reload handler
+// or submit hook may have written accurate post-compaction counts that we'd clobber.
+if (source === "estimated") {
+	const sf = stateFile(session_id);
+	try {
+		if (fs.existsSync(sf) && Date.now() - fs.statSync(sf).mtimeMs < 30000) {
+			log(
+				`state-skip session=${session_id} — not overwriting recent state with estimate`,
+			);
+			process.exit(0);
+		}
+	} catch {}
+}
+
+const savings = estimateSavings(transcript_path, currentTokens, maxTokens);
+
 try {
 	ensureDataDir();
 	fs.writeFileSync(
@@ -61,6 +78,8 @@ try {
 			recommendation,
 			source,
 			model: realUsage?.model || "unknown",
+			smart_estimate_pct: savings.smartPct,
+			recent_estimate_pct: savings.recentPct,
 			session_id,
 			transcript_path,
 			ts: Date.now(),

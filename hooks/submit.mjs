@@ -278,6 +278,8 @@ else
 	recommendation =
 		"At threshold. Compaction recommended — the warning menu will trigger on your next message.";
 
+const savings = estimateSavings(transcript_path, currentTokens, maxTokens);
+
 try {
 	ensureDataDir();
 	fs.writeFileSync(
@@ -293,6 +295,8 @@ try {
 			recommendation,
 			source,
 			model: realUsage?.model || "unknown",
+			smart_estimate_pct: savings.smartPct,
+			recent_estimate_pct: savings.recentPct,
 			session_id,
 			transcript_path,
 			ts: Date.now(),
