@@ -14,7 +14,7 @@ context-guardian/
   .claude-plugin/plugin.json       # Plugin manifest (hooks + skills)
   package.json                     # npm distribution
   hooks/
-    submit.mjs                     # UserPromptSubmit — main logic
+    submit.mjs                     # UserPromptSubmit — main hook (dispatch only)
     session-start.mjs              # SessionStart — flag cleanup
     stop.mjs                       # Stop — writes fresh token state after each response
   lib/
@@ -23,7 +23,13 @@ context-guardian/
     config.mjs                     # Config load/save, defaults
     content.mjs                    # flattenContent, contentBytesOf
     tokens.mjs                     # Token estimation + real state
-    transcript.mjs                 # extractConversation, extractRecent
+    transcript.mjs                 # extractConversation, extractRecent (extraction flow)
+    extract-helpers.mjs            # Content block processing, skip rules, state header
+    tool-summary.mjs               # Built-in tool summarisation rules
+    mcp-tools.mjs                  # MCP tool rules (Serena, Sequential Thinking, etc.)
+    trim.mjs                       # startEndTrim, error/confirmation detection
+    checkpoint.mjs                 # Shared compaction pipeline, checkpoint validation
+    reload-handler.mjs             # Checkpoint reload + resume after /clear
     stats.mjs                      # Compaction stats formatting
   skills/
     status/SKILL.md                # /context-guardian:status
