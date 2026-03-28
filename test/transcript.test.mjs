@@ -81,8 +81,8 @@ describe("extractConversation", () => {
 		writeLine(assistantMsg("Here is the file content."));
 
 		const result = extractConversation(transcriptPath);
-		// Tool-only assistant message gets a placeholder
-		assert.ok(result.includes("**Assistant:** [Performed tool operations]"));
+		// Tool-only assistant message gets a tool summary
+		assert.ok(result.includes("Read `/foo`"));
 		assert.ok(result.includes("**Assistant:** Here is the file content."));
 	});
 
@@ -226,7 +226,7 @@ describe("extractConversation", () => {
 	});
 
 	// --- Skill injection filtering ---
-	it("filters long messages starting with heading and having sub-headings", () => {
+	it("keeps long structured messages that don't match injection patterns", () => {
 		const skillContent =
 			"# Some Skill Title\n\nInstructions here.\n\n## Step 1\n\nDo this.\n\n## Step 2\n\nDo that.\n\n" +
 			"x".repeat(800);
@@ -234,7 +234,8 @@ describe("extractConversation", () => {
 		writeLine(userMsg("real message"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(!result.includes("Some Skill Title"));
+		// Long structured messages are now kept (old heuristic removed)
+		assert.ok(result.includes("Some Skill Title"));
 		assert.ok(result.includes("**User:** real message"));
 	});
 
@@ -293,7 +294,8 @@ describe("extractConversation", () => {
 		writeLine(userMsg("new question"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(result.startsWith("[SMART COMPACT"));
+		assert.ok(result.startsWith("## Session State"));
+		assert.ok(result.includes("[SMART COMPACT")); // preamble still present after header
 		assert.ok(result.includes("---")); // separator between preamble and new messages
 		assert.ok(result.includes("**User:** new question"));
 	});
@@ -360,6 +362,8 @@ describe("extractRecent", () => {
 	it("handles empty transcript", () => {
 		fs.writeFileSync(transcriptPath, "");
 		const result = extractRecent(transcriptPath, 20);
-		assert.equal(result, "");
+		// Empty transcript now returns a state header
+		assert.ok(result.startsWith("## Session State"));
+		assert.ok(result.includes("Messages preserved: 0"));
 	});
 });
