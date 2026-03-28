@@ -228,20 +228,14 @@ describe("menu response — choice 1 (continue)", () => {
 });
 
 // =========================================================================
-// Menu response — choice 0 (cancel)
+// Menu response — choice 0 (invalid, re-shows menu)
 // =========================================================================
-describe("menu response — choice 0 (cancel)", () => {
-	it("replays original prompt and cleans up flags", () => {
+describe("menu response — choice 0 (invalid)", () => {
+	it("re-shows menu for invalid choice 0", () => {
 		setupMenuFlags("my message");
 		const result = runHook({ prompt: "0" });
-		assert.ok(result.hookSpecificOutput);
-		assert.ok(
-			result.hookSpecificOutput.additionalContext.includes("my message"),
-		);
-		assert.ok(!fs.existsSync(path.join(flagsDir, "cg-menu-test-session-1234")));
-		assert.ok(
-			!fs.existsSync(path.join(flagsDir, "cg-prompt-test-session-1234")),
-		);
+		assert.equal(result.decision, "block");
+		assert.ok(result.reason.includes("not a valid option"));
 	});
 });
 

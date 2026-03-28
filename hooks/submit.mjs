@@ -17,6 +17,7 @@
 import fs from "node:fs";
 import { performCompaction, writeCompactionState } from "../lib/checkpoint.mjs";
 import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
+import { estimateSavings } from "../lib/estimate.mjs";
 import { log } from "../lib/logger.mjs";
 import {
 	ensureDataDir,
@@ -105,38 +106,11 @@ if (cMode) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Warning menu response (user replied 1/2/3/4/0/cancel)
+// 2. Warning menu response (user replied 1/2/3/4)
 // ---------------------------------------------------------------------------
 if (fs.existsSync(flags.menu)) {
 	const choice = (prompt || "").trim();
 
-	// Cancel / dismiss
-	if (choice === "0" || choice.toLowerCase() === "cancel") {
-		fs.unlinkSync(flags.menu);
-		let originalPrompt = "";
-		try {
-			originalPrompt = fs.readFileSync(flags.prompt, "utf8");
-		} catch {}
-		try {
-			fs.unlinkSync(flags.prompt);
-		} catch {}
-		try {
-			fs.unlinkSync(flags.warned);
-		} catch {}
-		try {
-			fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
-		} catch {}
-		log(`menu-cancel session=${session_id}`);
-		output({
-			hookSpecificOutput: {
-				hookEventName: "UserPromptSubmit",
-				additionalContext: `The user dismissed the context warning.\n\n<original_request>\n${originalPrompt}\n</original_request>\n\nTreat the above <original_request> as if the user just typed it. Respond to it now.`,
-			},
-		});
-		process.exit(0);
-	}
-
-	// Valid choices
 	if (["1", "2", "3", "4"].includes(choice)) {
 		fs.unlinkSync(flags.menu);
 		let originalPrompt = "";
@@ -223,7 +197,7 @@ if (fs.existsSync(flags.menu)) {
 		log(`menu-invalid choice="${choice}" session=${session_id}`);
 		output({
 			decision: "block",
-			reason: `"${choice}" is not a valid option. Please reply with 1, 2, 3, 4, or 0 to cancel.\n\n  1  Continue\n  2  Smart Compact\n  3  Keep Recent\n  4  Clear\n  0  Cancel (continue without warning)`,
+			reason: `"${choice}" is not a valid option. Please reply with 1, 2, 3, or 4.\n\n  1  Continue\n  2  Smart Compact\n  3  Keep Recent 20\n  4  Clear`,
 		});
 	}
 	process.exit(0);
@@ -368,17 +342,19 @@ log(
 	`BLOCKED session=${session_id} pct=${(pct * 100).toFixed(1)}% source=${source}`,
 );
 
+const currentPct = Math.round(pct * 100);
+const est = estimateSavings(transcript_path, currentTokens, maxTokens);
+
 output({
 	decision: "block",
 	reason: [
-		`Context Guardian — ~${(pct * 100).toFixed(1)}% used (~${currentTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens)`,
+		`Context Guardian — ~${currentPct}% used (~${currentTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens)`,
 		``,
-		`  1  Continue          proceed with your request (it's saved, don't retype it)`,
-		`  2  Smart Compact     keep text conversation, strip tool calls & code output`,
-		`  3  Keep Recent       drop oldest, keep last 20 messages`,
-		`  4  Clear             wipe everything`,
-		`  0  Cancel            dismiss this warning and continue`,
+		`  1  Continue           ~${currentPct}%`,
+		`  2  Smart Compact      ~${currentPct}% → ~${est.smartPct}%`,
+		`  3  Keep Recent 20     ~${currentPct}% → ~${est.recentPct}%`,
+		`  4  Clear              ~${currentPct}% → 0%`,
 		``,
-		`Reply with 1, 2, 3, 4, or 0.`,
+		`Reply with 1, 2, 3, or 4.`,
 	].join("\n"),
 });
