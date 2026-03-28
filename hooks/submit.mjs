@@ -3,7 +3,7 @@
  * UserPromptSubmit hook — Context Guardian's main entry point.
  *
  * Runs on every user message. Handles (in order):
- * 1. Manual compaction commands (/context-guardian:compact, :prune)
+ * 1. Manual compaction commands (/cg:compact, :prune)
  * 2. Warning menu responses (1-4, 0/cancel)
  * 3. Resume detection ("resume" after /clear)
  * 4. Slash command bypass
@@ -35,9 +35,7 @@ let input;
 try {
 	input = JSON.parse(fs.readFileSync(0, "utf8"));
 } catch (e) {
-	process.stderr.write(
-		`context-guardian: failed to parse stdin: ${e.message}\n`,
-	);
+	process.stderr.write(`cg: failed to parse stdin: ${e.message}\n`);
 	process.exit(0);
 }
 const { session_id = "unknown", prompt, transcript_path } = input;
@@ -58,8 +56,8 @@ if (fs.existsSync(flags.compactMenu)) {
 	fs.unlinkSync(flags.compactMenu);
 } else {
 	const p = (prompt || "").trim().toLowerCase();
-	if (p.startsWith("/context-guardian:compact")) cMode = "smart";
-	else if (p.startsWith("/context-guardian:prune")) cMode = "recent";
+	if (p.startsWith("/cg:compact")) cMode = "smart";
+	else if (p.startsWith("/cg:prune")) cMode = "recent";
 }
 
 if (cMode) {
@@ -68,7 +66,7 @@ if (cMode) {
 		output({
 			decision: "block",
 			reason:
-				"Context Guardian: invalid compaction mode. Use /context-guardian:compact or /context-guardian:prune.",
+				"Context Guardian: invalid compaction mode. Use /cg:compact or /cg:prune.",
 		});
 		process.exit(0);
 	}
@@ -87,7 +85,7 @@ if (cMode) {
 		output({
 			hookSpecificOutput: {
 				hookEventName: "UserPromptSubmit",
-				additionalContext: `[Context Guardian] Could not extract meaningful conversation content. Your session may consist primarily of tool interactions with minimal text. Try ${cMode === "smart" ? "/context-guardian:prune" : "/context-guardian:compact"} instead, or continue working.`,
+				additionalContext: `[Context Guardian] Could not extract meaningful conversation content. Your session may consist primarily of tool interactions with minimal text. Try ${cMode === "smart" ? "/cg:prune" : "/cg:compact"} instead, or continue working.`,
 			},
 		});
 		process.exit(0);
@@ -267,7 +265,7 @@ log(
 	`check session=${session_id} tokens=${currentTokens}/${maxTokens} pct=${(pct * 100).toFixed(1)}% threshold=${(threshold * 100).toFixed(0)}% source=${source} warned=${fs.existsSync(flags.warned)}`,
 );
 
-// Write state for /context-guardian:status
+// Write state for /cg:stats
 const headroom = Math.max(0, Math.round(maxTokens * threshold - currentTokens));
 const pctDisplay = (pct * 100).toFixed(1);
 const thresholdDisplay = Math.round(threshold * 100);

@@ -8,9 +8,7 @@ let input;
 try {
 	input = JSON.parse(fs.readFileSync(0, "utf8"));
 } catch (e) {
-	process.stderr.write(
-		`context-guardian: failed to parse stdin: ${e.message}\n`,
-	);
+	process.stderr.write(`cg: failed to parse stdin: ${e.message}\n`);
 	process.exit(0);
 }
 

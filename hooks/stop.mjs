@@ -8,15 +8,13 @@ import { estimateTokens, getTokenUsage } from "../lib/tokens.mjs";
 // ---------------------------------------------------------------------------
 // Stop hook — writes fresh token state after each assistant response.
 // The transcript now contains the latest message.usage, so this gives
-// the most up-to-date counts for /context-guardian:status.
+// the most up-to-date counts for /cg:stats.
 // ---------------------------------------------------------------------------
 let input;
 try {
 	input = JSON.parse(fs.readFileSync(0, "utf8"));
 } catch (e) {
-	process.stderr.write(
-		`context-guardian: failed to parse stdin: ${e.message}\n`,
-	);
+	process.stderr.write(`cg: failed to parse stdin: ${e.message}\n`);
 	process.exit(0);
 }
 
