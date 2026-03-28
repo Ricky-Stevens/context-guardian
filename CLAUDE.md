@@ -91,6 +91,80 @@ The submit hook detects `/context-guardian:compact` and `/context-guardian:prune
 
 No original prompt stored (manual trigger, not blocking a message).
 
+## Compaction Design — Core Principles
+
+**Noise removal, not summarisation. Never lose context.**
+
+Both Smart Compact and Keep Recent use the same tool-aware extraction engine. The approach removes re-obtainable and disposable data while keeping all decision-relevant content in full fidelity. No LLM is involved in extraction — it's deterministic string processing.
+
+### What gets KEPT (decision-relevant content)
+
+| Content | Treatment |
+|---------|-----------|
+| User text messages | Full — never dropped (except affirmative confirmations like "yes", "ok") |
+| User rejections ("no") and numbered choices | Full — these are decisions |
+| Assistant text reasoning | Full |
+| Edit/Write diffs (old_string → new_string) | Full, or start+end trim if >3K chars |
+| Bash commands + output | Full, or start+end trim if >5K chars |
+| AskUserQuestion answers (tool_result) | Always full — user decision channel |
+| WebSearch results | Full, or start+end trim if >5K (ephemeral, can't re-fetch) |
+| Serena write tools (replace_symbol_body, insert) | Code body preserved like Edit diffs |
+| Sequential thinking (thought chain) | Full, or start+end trim if >2K per thought |
+| Agent results | Full, or start+end trim if >2K |
+| Error responses from any tool | Always kept |
+
+### What gets REMOVED (noise / re-obtainable)
+
+| Content | Why |
+|---------|-----|
+| File read results (Read/Grep/Glob tool_results) | Re-obtainable from disk — the dominant bloat (30-50% of tokens) |
+| Thinking / redacted_thinking blocks | Internal reasoning, redundant with assistant text |
+| System / progress messages | Infrastructure noise |
+| Edit/Write success results | Just "success" — assistant text covers it |
+| Serena read/query results | Re-obtainable |
+| Context-mode results | Sandbox-internal; assistant text has the summary |
+| Serena memory results | Externally persisted |
+
+### Universal truncation: start+end trim
+
+When content exceeds its size limit, we NEVER chop at a point. We keep the first N chars (intent) and last N chars (outcome), trimming only the middle with a marker `[...N chars trimmed from middle...]`. This preserves the narrative thread because results/conclusions appear at the end.
+
+### Smart Compact specifics
+
+- Processes ALL messages after the last compaction boundary
+- Preserves one level of prior compacted history as a preamble (start+end trimmed at 30K)
+- Generates a `## Session State` header at the top with goal, files modified, last action
+- Output format: `**User:**`/`**Assistant:**` prefixes with `→` tool summaries and `←` results interleaved
+
+### Keep Recent specifics
+
+- Counts by **user exchanges**, not flat messages. N=10 means last 10 user messages, each grouped with all assistant responses, tool summaries, and tool results that follow
+- State header computed from windowed content only (not full session)
+- Same tool-aware processing as Smart Compact within each exchange
+
+### Checkpoint injection framing
+
+After `/clear`, the checkpoint is injected as `additionalContext` with this framing (NOT "summary"):
+> "The following is a preserved record of the prior conversation with noise removed. Tool outputs that can be re-obtained (file reads, search results) were stripped. All user messages, assistant reasoning, code changes, and command outputs are preserved verbatim."
+
+Includes a re-read guardrail: "You have NOT read any files in this session — re-read any file before referencing its contents or making further edits."
+
+### Skip rules for user messages
+
+- Slash commands → skip (meta-operations)
+- CG menu replies (0-4, cancel) → skip
+- Compact markers → skip
+- Affirmative confirmations (yes, ok, sure, continue, etc.) → skip
+- Known system injections (checkpoint restores, skill injections) → skip
+- "no", "n", bare numbers → KEEP (decisions, not confirmations)
+- Long structured user messages → KEEP regardless of size (never drop user content for size)
+
+### Content block placeholders
+
+- `type: "image"` → `[User shared an image]`
+- `type: "document"` → `[User shared a document: {filename}]`
+- Unknown block types → `[Unknown content block: {type}]`
+
 ## Config
 
 `${CLAUDE_PLUGIN_DATA}/config.json`:
