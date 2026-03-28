@@ -3,14 +3,14 @@
 ## What This Project Is
 
 A Claude Code **plugin** that monitors context window usage and intervenes before quality degrades. Installed from GitHub with `/plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
-/plugin install context-guardian`.
+/plugin install cg`.
 
 Three hooks + four skills + a shared library.
 
 ## Plugin Structure
 
 ```
-context-guardian/
+cg/
   .claude-plugin/plugin.json       # Plugin manifest (hooks + skills)
   package.json                     # npm distribution
   hooks/
@@ -32,10 +32,10 @@ context-guardian/
     reload-handler.mjs             # Checkpoint reload + resume after /clear
     stats.mjs                      # Compaction stats formatting
   skills/
-    status/SKILL.md                # /context-guardian:status
-    config/SKILL.md                # /context-guardian:config
-    compact/SKILL.md               # /context-guardian:compact
-    prune/SKILL.md                 # /context-guardian:prune
+    stats/SKILL.md                 # /cg:stats
+    config/SKILL.md                # /cg:config
+    compact/SKILL.md               # /cg:compact
+    prune/SKILL.md                 # /cg:prune
 ```
 
 ## Key Paths
@@ -50,9 +50,9 @@ context-guardian/
 | `.claude/cg-warned-{session_id}` | Per-session "already warned" flag |
 | `.claude/cg-menu-{session_id}` | Signals we're waiting for a menu reply |
 | `.claude/cg-prompt-{session_id}` | Stores the user's original blocked prompt |
-| `~/.claude/logs/context-guardian.log` | All hook activity |
+| `~/.claude/logs/cg.log` | All hook activity |
 
-Fallback when `CLAUDE_PLUGIN_DATA` is unset: `~/.claude/context-guardian/`.
+Fallback when `CLAUDE_PLUGIN_DATA` is unset: `~/.claude/cg/`.
 
 Session flags live in the **project's** `.claude/` dir (not plugin data) so they are project-scoped and cleaned by SessionStart.
 
@@ -60,13 +60,13 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 
 | Command | Purpose |
 |---------|---------|
-| `/context-guardian:status` | Show current token usage, threshold, headroom, recommendation |
-| `/context-guardian:config` | View/update threshold and max_tokens |
-| `/context-guardian:config threshold 0.50` | Change threshold |
-| `/context-guardian:config max_tokens 1000000` | Change max tokens |
-| `/context-guardian:config reset` | Reset to defaults |
-| `/context-guardian:compact` | Run Smart Compact on demand |
-| `/context-guardian:prune` | Run Keep Recent (last 10 exchanges) on demand |
+| `/cg:stats` | Show current token usage, threshold, headroom, recommendation |
+| `/cg:config` | View/update threshold and max_tokens |
+| `/cg:config threshold 0.50` | Change threshold |
+| `/cg:config max_tokens 1000000` | Change max tokens |
+| `/cg:config reset` | Reset to defaults |
+| `/cg:compact` | Run Smart Compact on demand |
+| `/cg:prune` | Run Keep Recent (last 10 exchanges) on demand |
 
 ## How The Warning Hook Works
 
@@ -76,7 +76,7 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
    - Write flags (`cg-warned`, `cg-menu`, `cg-prompt`)
    - Return `decision: "block"` with the menu
 4. If `pct < threshold` → clear warned flag (so it can re-fire later)
-5. Messages starting with `/` bypass the hook (but if a reload checkpoint is pending, a state file preview is written so `/context-guardian:status` works)
+5. Messages starting with `/` bypass the hook (but if a reload checkpoint is pending, a state file preview is written so `/cg:stats` works)
 6. Menu reply (1/2/3/4):
    - **1 Continue** — clear warned flag, set 2-min cooldown, replay original prompt via `additionalContext`
    - **2 Smart Compact** — extract full history with tool-aware processing, save checkpoint, show stats via `decision: "block"`, set cooldown
@@ -87,7 +87,7 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 
 ## Manual Compact (skills)
 
-The submit hook detects `/context-guardian:compact` and `/context-guardian:prune` directly from the prompt and runs compaction immediately — no intermediate flag file or extra user message needed. The skill SKILL.md files instruct Claude to display the stats from `additionalContext`. Same compaction engine as the warning menu options 2/3. Manual compactions use `additionalContext` (not `decision: "block"`) so Claude Code doesn't show "Original prompt:".
+The submit hook detects `/cg:compact` and `/cg:prune` directly from the prompt and runs compaction immediately — no intermediate flag file or extra user message needed. The skill SKILL.md files instruct Claude to display the stats from `additionalContext`. Same compaction engine as the warning menu options 2/3. Manual compactions use `additionalContext` (not `decision: "block"`) so Claude Code doesn't show "Original prompt:".
 
 No original prompt stored (manual trigger, not blocking a message).
 
@@ -178,7 +178,7 @@ Includes a re-read guardrail: "You have NOT read any files in this session — r
 
 1. **Real counts (preferred):** Both the submit and stop hooks read `message.usage` from the most recent assistant message in the transcript JSONL (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) and write the result to `state-{session_id}.json`. The stop hook runs after each response, so state is always up-to-date.
 2. **Byte estimation (fallback):** Content bytes after the last compact marker, divided by 4.
-3. **Post-compaction estimates:** After compaction or reload injection, a state file is written with estimated token counts so `/context-guardian:status` works immediately.
+3. **Post-compaction estimates:** After compaction or reload injection, a state file is written with estimated token counts so `/cg:stats` works immediately.
 
 ## Testing
 
@@ -194,19 +194,19 @@ bun test
 # test/submit.test.mjs         — hook integration tests
 
 # Local plugin testing
-claude --plugin-dir /path/to/context-guardian
+claude --plugin-dir /path/to/cg
 
 # Low threshold for testing
-/context-guardian:config threshold 0.01
+/cg:config threshold 0.01
 
 # Reset to production
-/context-guardian:config reset
+/cg:config reset
 
 # Clear session flags
 rm -f <project-dir>/.claude/cg-*
 
 # Watch logs
-tail -f ~/.claude/logs/context-guardian.log
+tail -f ~/.claude/logs/cg.log
 ```
 
 The e2e test (`compaction-e2e.test.mjs`) creates a 26-turn coding session with 19 specific trackable facts (edit diffs, bash output, user decisions, error messages, etc.) and 5 noise items. It verifies every fact survives extraction and all noise is removed. If any future change drops a fact, the test names the exact fact lost.
@@ -235,9 +235,9 @@ If any of these are out of sync, the marketplace will think the installed versio
 ```bash
 # Install from GitHub
 /plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
-/plugin install context-guardian
+/plugin install cg
 
 # Update (uninstall + reinstall, then start new session)
-/plugin uninstall context-guardian
-/plugin install context-guardian
+/plugin uninstall cg
+/plugin install cg
 ```

@@ -9,7 +9,7 @@ allowed-tools: Read, Edit, Bash
 # Context Guardian Config
 
 Manage the configuration file at `${CLAUDE_PLUGIN_DATA}/config.json`.
-If `${CLAUDE_PLUGIN_DATA}` is empty, use `~/.claude/context-guardian/config.json`.
+If `${CLAUDE_PLUGIN_DATA}` is empty, use `~/.claude/cg/config.json`.
 
 ## No arguments — show current config
 
@@ -32,9 +32,9 @@ If the state file exists and has a `model` field, display:
 │  Config file:  {path to config.json}
 │
 │  Usage:
-│    /context-guardian:config threshold 0.50
-│    /context-guardian:config max_tokens 1000000
-│    /context-guardian:config reset
+│    /cg:config threshold 0.50
+│    /cg:config max_tokens 1000000
+│    /cg:config reset
 │
 └─────────────────────────────────────────────────
 ```

@@ -15,7 +15,7 @@ Distributed as a **Claude Code plugin** — one command to install, zero configu
 /plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
 
 # Install the plugin
-/plugin install context-guardian
+/plugin install cg
 ```
 
 That's it. Works immediately after `/reload-plugins` or on your next Claude Code session.
@@ -26,34 +26,34 @@ To pull the latest version:
 
 1. Open `/plugins`
 2. Go to **Marketplaces** tab → select the context-guardian marketplace → **Update marketplace**
-3. Go to **Installed** tab → select context-guardian → **Update**
+3. Go to **Installed** tab → select cg → **Update**
 4. Run `/reload-plugins` or start a new session
 
 ### Uninstall
 
 ```bash
-/plugin uninstall context-guardian
+/plugin uninstall cg
 ```
 
 ### Local development
 
 ```bash
-claude --plugin-dir /path/to/context-guardian
+claude --plugin-dir /path/to/cg
 ```
 
 ---
 
 ## Commands
 
-Context Guardian adds three slash commands:
+Context Guardian adds four slash commands:
 
-### `/context-guardian:status`
+### `/cg:stats`
 
 Check your current context window usage at any time:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────
-│  Context Guardian Status
+│  Context Guardian Stats
 │
 │  Current usage:   372,000 / 1,000,000 tokens (37.2%)
 │  Threshold:       35% (triggers warning)
@@ -70,26 +70,26 @@ Check your current context window usage at any time:
 
 Token counts are **real values** read from `message.usage` in Claude Code's transcript — not estimates.
 
-### `/context-guardian:config`
+### `/cg:config`
 
 View or update configuration without editing files:
 
 ```bash
-/context-guardian:config                     # show current config
-/context-guardian:config threshold 0.50      # trigger at 50%
-/context-guardian:config max_tokens 1000000  # override token limit
-/context-guardian:config reset               # restore defaults
+/cg:config                     # show current config
+/cg:config threshold 0.50      # trigger at 50%
+/cg:config max_tokens 1000000  # override token limit
+/cg:config reset               # restore defaults
 ```
 
 The config also shows the **auto-detected model and token limit** from your active session, so you can see what Context Guardian is actually using versus the config fallback.
 
-### `/context-guardian:compact`
+### `/cg:compact`
 
 Run Smart Compact on demand — extracts full conversation history, strips tool calls, tool results, thinking blocks, and system messages. Typically achieves 70-90% reduction. Same compaction engine as the automatic warning.
 
 After running, type `/clear` to apply the compaction.
 
-### `/context-guardian:prune`
+### `/cg:prune`
 
 Run Keep Recent on demand — drops oldest messages, keeps the last 20 meaningful text messages (tool-only assistant turns don't count). Good when only recent work matters.
 
@@ -169,8 +169,8 @@ Compacting at 35% (350K tokens on Opus) and reducing to ~5% saves approximately 
 ### Adjusting the Threshold
 
 ```bash
-/context-guardian:config threshold 0.50    # less conservative, fewer interruptions
-/context-guardian:config threshold 0.25    # more conservative, maximum quality
+/cg:config threshold 0.50    # less conservative, fewer interruptions
+/cg:config threshold 0.25    # more conservative, maximum quality
 ```
 
 **When to raise it (0.40-0.60):**
@@ -292,7 +292,7 @@ The cooldown is cleared by:
 ### Plugin Structure
 
 ```
-context-guardian/
+cg/
   .claude-plugin/
     plugin.json           # Plugin manifest — hooks + skills
   hooks/
@@ -308,10 +308,10 @@ context-guardian/
     transcript.mjs        # Conversation extraction
     stats.mjs             # Compaction stats formatting
   skills/
-    status/SKILL.md       # /context-guardian:status
-    config/SKILL.md       # /context-guardian:config
-    compact/SKILL.md      # /context-guardian:compact
-    prune/SKILL.md        # /context-guardian:prune
+    stats/SKILL.md        # /cg:stats
+    config/SKILL.md       # /cg:config
+    compact/SKILL.md      # /cg:compact
+    prune/SKILL.md        # /cg:prune
   package.json
   README.md
 ```
@@ -337,13 +337,13 @@ Context Guardian uses **both**: hooks for the automatic monitoring and blocking,
 
 ### Token Counting
 
-Two methods, preferring the more accurate. State is written by **both** the submit hook (before the response) and the stop hook (after the response), so `/context-guardian:status` always reflects the latest counts.
+Two methods, preferring the more accurate. State is written by **both** the submit hook (before the response) and the stop hook (after the response), so `/cg:stats` always reflects the latest counts.
 
 1. **Real counts (preferred):** Reads `message.usage` from the most recent assistant message in the transcript JSONL. Calculates `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`. Also detects the model name for auto-detecting max_tokens.
 
 2. **Byte estimation (fallback):** Only used on the very first message of a session (before any assistant response). Counts content bytes after the most recent compact marker and divides by 4.
 
-3. **Post-compaction estimates:** After compaction or checkpoint restore, a state file is written with estimated post-compaction token counts so `/context-guardian:status` works immediately — no need to send a message first.
+3. **Post-compaction estimates:** After compaction or checkpoint restore, a state file is written with estimated post-compaction token counts so `/cg:stats` works immediately — no need to send a message first.
 
 ### Model Auto-Detection
 
@@ -356,7 +356,7 @@ This runs on every token check, so switching models mid-session is handled autom
 
 ### Data Storage
 
-All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}`, typically `~/.claude/plugins/data/context-guardian/`):
+All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}`, typically `~/.claude/plugins/data/cg/`):
 
 | File | Purpose |
 |------|---------|
@@ -375,10 +375,10 @@ Session-scoped flags (`cg-warned`, `cg-menu`, `cg-prompt`, `cg-compact`) live in
 
 ## Logging
 
-All hook activity logs to `~/.claude/logs/context-guardian.log`:
+All hook activity logs to `~/.claude/logs/cg.log`:
 
 ```bash
-tail -f ~/.claude/logs/context-guardian.log
+tail -f ~/.claude/logs/cg.log
 ```
 
 Log entries include token counts, threshold checks, menu interactions, checkpoint creation with compression stats, resume/reload events, and cooldown activity.
@@ -388,8 +388,8 @@ Log entries include token counts, threshold checks, menu interactions, checkpoin
 ## Troubleshooting
 
 **Menu doesn't appear:**
-- Check your threshold: `/context-guardian:config`
-- Check logs: `tail -20 ~/.claude/logs/context-guardian.log`
+- Check your threshold: `/cg:config`
+- Check logs: `tail -20 ~/.claude/logs/cg.log`
 - Verify plugin is loaded: `/plugins`
 
 **"resume" doesn't work:**
@@ -407,7 +407,7 @@ Log entries include token counts, threshold checks, menu interactions, checkpoin
 
 **Plugin not loading:**
 - Ensure Claude Code v1.0.33+ (plugin system requirement)
-- Try: `/plugin uninstall context-guardian` then `/plugin install context-guardian`
+- Try: `/plugin uninstall cg` then `/plugin install cg`
 
 ---
 
@@ -416,9 +416,9 @@ Log entries include token counts, threshold checks, menu interactions, checkpoin
 To remove the plugin and all saved data:
 
 ```bash
-/plugin uninstall context-guardian
-rm -rf ~/.claude/plugins/data/context-guardian
-rm ~/.claude/logs/context-guardian.log
+/plugin uninstall cg
+rm -rf ~/.claude/plugins/data/cg
+rm ~/.claude/logs/cg.log
 ```
 
 ---
