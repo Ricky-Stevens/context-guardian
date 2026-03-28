@@ -210,11 +210,9 @@ describe("checkpoint content integrity", () => {
 		assert.ok(checkpoint.includes("bug is on line 42"));
 		assert.ok(checkpoint.includes("fix line 42"));
 		assert.ok(checkpoint.includes("null pointer"));
-		// Tool-only response gets placeholder
-		assert.ok(checkpoint.includes("[Performed tool operations]"));
-		// File reference summary added
-		assert.ok(checkpoint.includes("/foo.js"));
-		assert.ok(checkpoint.includes("Files referenced"));
+		// Tool-only response gets tool summary instead of placeholder
+		assert.ok(checkpoint.includes("→ Read"), "Should have tool summary for Read");
+		assert.ok(checkpoint.includes("/foo.js"), "Should reference the file path");
 	});
 });
 
@@ -229,17 +227,25 @@ describe("message ordering preservation", () => {
 		}
 
 		const result = extractConversation(transcriptPath);
-		const positions = [];
-		for (let i = 1; i <= 5; i++) {
-			positions.push(result.indexOf(`step ${i} request`));
-			positions.push(result.indexOf(`step ${i} done`));
-		}
 
 		// Every message found
-		for (const pos of positions) {
-			assert.ok(pos >= 0, "Message missing from extraction");
+		for (let i = 1; i <= 5; i++) {
+			assert.ok(result.includes(`step ${i} request`), `Missing request ${i}`);
+			assert.ok(result.includes(`step ${i} done`), `Missing done ${i}`);
 		}
-		// Strictly ascending order
+
+		// Find positions of **User:** and **Assistant:** tagged messages
+		// (skip the Session State header which may reference the last message)
+		const bodyStart = result.indexOf("---\n\n**");
+		assert.ok(bodyStart >= 0, "Should have message body after header");
+		const body = result.slice(bodyStart);
+		const positions = [];
+		for (let i = 1; i <= 5; i++) {
+			positions.push(body.indexOf(`step ${i} request`));
+			positions.push(body.indexOf(`step ${i} done`));
+		}
+
+		// Strictly ascending order within the body
 		for (let i = 1; i < positions.length; i++) {
 			assert.ok(positions[i] > positions[i - 1], `Message ${i} out of order`);
 		}
@@ -252,9 +258,16 @@ describe("message ordering preservation", () => {
 		}
 
 		const result = extractRecent(transcriptPath, 6); // last 6 messages
-		const pos8 = result.indexOf("msg 8");
-		const pos9 = result.indexOf("msg 9");
-		const pos10 = result.indexOf("msg 10");
+		// Search in message body after the Session State header
+		const bodyStart = result.indexOf("---\n\n**");
+		assert.ok(bodyStart >= 0, "Should have message body after header");
+		const body = result.slice(bodyStart);
+		const pos8 = body.indexOf("**User:** msg 8");
+		const pos9 = body.indexOf("**User:** msg 9");
+		const pos10 = body.indexOf("**User:** msg 10");
+		assert.ok(pos8 >= 0, "msg 8 should be present");
+		assert.ok(pos9 >= 0, "msg 9 should be present");
+		assert.ok(pos10 >= 0, "msg 10 should be present");
 		assert.ok(pos8 < pos9, "msg 8 should come before msg 9");
 		assert.ok(pos9 < pos10, "msg 9 should come before msg 10");
 	});
@@ -287,13 +300,14 @@ describe("successive compaction integrity", () => {
 		assert.ok(result.includes("follow-up question"));
 		assert.ok(result.includes("follow-up answer"));
 
-		// Count occurrences — "follow-up question" should appear exactly once
-		// (not duplicated from being in both the preamble and the message list)
-		const matches = result.match(/follow-up question/g);
+		// "follow-up question" appears in the message body; it may also
+		// appear in the Session State header's "Goal:" line as a summary.
+		// The key invariant is that it appears exactly once as a **User:** message.
+		const userMatches = result.match(/\*\*User:\*\* follow-up question/g);
 		assert.equal(
-			matches.length,
+			userMatches.length,
 			1,
-			"follow-up question should appear exactly once",
+			"follow-up question should appear exactly once as a User message",
 		);
 	});
 
@@ -511,11 +525,12 @@ describe("degenerate transcript handling", () => {
 		});
 
 		const result = extractConversation(transcriptPath);
-		// No user messages (all empty), but tool-only assistants get placeholders
+		// No user messages (all empty), but tool-only assistants get tool summaries
 		assert.ok(!result.includes("**User:**"));
-		assert.ok(result.includes("[Performed tool operations]"));
-		// File reference summary
-		assert.ok(result.includes("Files referenced"));
+		assert.ok(
+			result.includes("→ Read") || result.includes("→ Edit") || result.includes("→ Ran"),
+			"Should have tool summaries for tool-only responses",
+		);
 	});
 
 	it("mixed tool and text preserves text and tracks files", () => {
@@ -541,11 +556,11 @@ describe("degenerate transcript handling", () => {
 		assert.ok(result.includes("fix the bug"));
 		assert.ok(result.includes("I'll fix that bug now."));
 		assert.ok(result.includes("Done, the bug is fixed."));
-		// File tracked in reference summary
-		assert.ok(result.includes("Files referenced"));
-		assert.ok(result.includes("/bug.js"));
-		// But tool_use block content not inline in the message text
-		assert.ok(!result.includes("tool_use"));
+		// File tracked in Session State header as "Files modified"
+		assert.ok(result.includes("Files modified"), "Should have Files modified in header");
+		assert.ok(result.includes("/bug.js"), "Should reference the edited file");
+		// Tool use produces a summary, not raw tool_use JSON
+		assert.ok(!result.includes('"type":"tool_use"'));
 	});
 });
 
