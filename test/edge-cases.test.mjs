@@ -221,10 +221,11 @@ describe("tokens — tiered read exhaustion", () => {
 // transcript.mjs — extractRecent skill injection filter (line 194)
 // =========================================================================
 describe("extractRecent — skill injection filter", () => {
-	it("filters long multi-heading messages in extractRecent", () => {
+	it("filters known skill injection messages in extractRecent", () => {
 		const tp = path.join(tmpDir, "recent-skill.jsonl");
+		// New injection filter matches messages containing both "SKILL.md" and "plugin"
 		const skillContent =
-			"# Skill Title\n\nInstructions.\n\n## Step 1\n\nDo this.\n\n## Step 2\n\nDo that.\n\n" +
+			"# Skill Title\n\nInstructions from SKILL.md for this plugin.\n\n## Step 1\n\nDo this.\n\n## Step 2\n\nDo that.\n\n" +
 			"x".repeat(800);
 		fs.appendFileSync(
 			tp,
