@@ -309,18 +309,19 @@ describe("extractRecent", () => {
 		assert.equal(extractRecent(null, 20), "(no transcript available)");
 	});
 
-	it("extracts the last N messages", () => {
+	it("extracts the last N user exchanges", () => {
 		for (let i = 0; i < 10; i++) {
 			writeLine(userMsg(`message ${i}`));
 			writeLine(assistantMsg(`response ${i}`));
 		}
 
+		// N=4 means last 4 USER messages + their grouped assistant responses
 		const result = extractRecent(transcriptPath, 4);
-		// Should have last 4 messages (user 8, assistant 8, user 9, assistant 9)
-		assert.ok(!result.includes("message 7"));
-		assert.ok(result.includes("message 8"));
-		assert.ok(result.includes("response 8"));
-		assert.ok(result.includes("message 9"));
+		// Should have exchanges 6-9 (the last 4 user messages)
+		assert.ok(!result.includes("message 5"), "exchange 5 should be outside window");
+		assert.ok(result.includes("message 6"), "exchange 6 should be in window");
+		assert.ok(result.includes("response 6"));
+		assert.ok(result.includes("message 9"), "last exchange in window");
 		assert.ok(result.includes("response 9"));
 	});
 
