@@ -60,7 +60,7 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 | `/context-guardian:config max_tokens 1000000` | Change max tokens |
 | `/context-guardian:config reset` | Reset to defaults |
 | `/context-guardian:compact` | Run Smart Compact on demand |
-| `/context-guardian:prune` | Run Keep Recent 20 on demand |
+| `/context-guardian:prune` | Run Keep Recent (last 10 exchanges) on demand |
 
 ## How The Warning Hook Works
 
@@ -73,8 +73,8 @@ Session flags live in the **project's** `.claude/` dir (not plugin data) so they
 5. Messages starting with `/` bypass the hook (but if a reload checkpoint is pending, a state file preview is written so `/context-guardian:status` works)
 6. Menu reply (1/2/3/4):
    - **1 Continue** — clear warned flag, set 2-min cooldown, replay original prompt via `additionalContext`
-   - **2 Smart Compact** — extract full history, save checkpoint, show stats via `decision: "block"`, set cooldown
-   - **3 Keep Recent** — take last 20 text messages (tool-only turns excluded), save checkpoint, show stats via `decision: "block"`, set cooldown
+   - **2 Smart Compact** — extract full history with tool-aware processing, save checkpoint, show stats via `decision: "block"`, set cooldown
+   - **3 Keep Recent** — take last 10 user exchanges (grouped with responses), save checkpoint, show stats via `decision: "block"`, set cooldown
    - **4 Clear** — tell user to `/clear`, set cooldown
 7. After compaction (2/3): user types `/clear`, checkpoint auto-restores. Typing `resume` replays original prompt.
 8. Cooldown (2 min) prevents re-trigger after compaction or continue. Cleared on `/clear` restore and new sessions.
