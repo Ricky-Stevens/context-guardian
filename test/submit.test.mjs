@@ -142,7 +142,7 @@ describe("slash command bypass", () => {
 	it("exits silently for slash commands", () => {
 		writeLine(makeUser("hello"));
 		writeLine(makeAssistant("hi", HIGH_USAGE));
-		const result = runHook({ prompt: "/context-guardian:status" });
+		const result = runHook({ prompt: "/cg:stats" });
 		assert.equal(result, null);
 	});
 });
@@ -566,7 +566,7 @@ describe("reload detection", () => {
 });
 
 // =========================================================================
-// Manual compact (via /context-guardian:compact and :prune skills)
+// Manual compact (via /cg:compact and :prune skills)
 // =========================================================================
 describe("manual compact", () => {
 	it("runs smart compact when flag contains 'smart'", () => {

@@ -302,7 +302,7 @@ describe("isSystemInjection", () => {
 	it("returns true for text containing both SKILL.md and plugin", () => {
 		assert.equal(
 			isSystemInjection(
-				"Loading SKILL.md from the plugin directory for context-guardian",
+				"Loading SKILL.md from the plugin directory for cg",
 			),
 			true,
 		);
