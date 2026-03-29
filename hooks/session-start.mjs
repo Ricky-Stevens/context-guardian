@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { log } from "../lib/logger.mjs";
 import { DATA_DIR, projectStateFiles } from "../lib/paths.mjs";
@@ -64,6 +65,46 @@ if (fs.existsSync(DATA_DIR)) {
 			} catch {}
 		}
 	} catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Self-healing: if the marketplace repo dir is missing, background-clone it.
+// Claude Code resolves CLAUDE_PLUGIN_ROOT from the marketplace location for
+// some hooks; if that dir doesn't exist, hooks fail with
+// "Plugin directory does not exist". Fire-and-forget so we don't block startup.
+// ---------------------------------------------------------------------------
+try {
+	const knownPath = path.join(
+		os.homedir(),
+		".claude",
+		"plugins",
+		"known_marketplaces.json",
+	);
+	if (fs.existsSync(knownPath)) {
+		const known = JSON.parse(fs.readFileSync(knownPath, "utf8"));
+		const entry = known["context-guardian"];
+		if (entry?.installLocation && !fs.existsSync(entry.installLocation)) {
+			const url =
+				entry.source?.url ||
+				(entry.source?.repo
+					? `https://github.com/${entry.source.repo}.git`
+					: null);
+			if (url) {
+				log(
+					`self-heal: marketplace dir missing at ${entry.installLocation}, cloning from ${url}`,
+				);
+				const { spawn } = await import("node:child_process");
+				const child = spawn(
+					"git",
+					["clone", "--depth", "1", url, entry.installLocation],
+					{ stdio: "ignore", detached: true },
+				);
+				child.unref();
+			}
+		}
+	}
+} catch (e) {
+	log(`self-heal-error: ${e.message}`);
 }
 
 log(

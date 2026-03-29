@@ -61,6 +61,30 @@ All values come directly from the JSON — use them as-is. Pre-computed fields: 
 └─────────────────────────────────────────────────
 ```
 
-Output ONLY this box. No extra text, explanation, or commentary.
+## Step 4 — Run diagnostics
+
+Run: `node ${CLAUDE_PLUGIN_ROOT}/lib/diagnostics.mjs`
+
+Parse the JSON output. If **all** checks have `ok: true`, append this line inside the box before the closing `└`:
+
+```
+│
+│  Health:          All checks passed
+```
+
+If **any** check has `ok: false`, append this instead:
+
+```
+│
+│  Health:          {count} issue(s) detected
+│    ✗ {check.name}: {check.detail}
+│    ✗ {check.name}: {check.detail}
+```
+
+List only the failed checks. Each on its own `│    ✗` line.
+
+## Output
+
+Output ONLY the box. No extra text, explanation, or commentary.
 
 $ARGUMENTS
