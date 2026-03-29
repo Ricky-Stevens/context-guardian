@@ -3,13 +3,20 @@ import fs from "node:fs";
 import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
 import { estimateSavings } from "../lib/estimate.mjs";
 import { log } from "../lib/logger.mjs";
-import { ensureDataDir, stateFile } from "../lib/paths.mjs";
+import {
+	atomicWriteFileSync,
+	ensureDataDir,
+	stateFile,
+} from "../lib/paths.mjs";
 import { estimateTokens, getTokenUsage } from "../lib/tokens.mjs";
 
 // ---------------------------------------------------------------------------
-// Stop hook — writes fresh token state after each assistant response.
-// The transcript now contains the latest message.usage, so this gives
-// the most up-to-date counts for /cg:stats.
+// Stop hook — writes fresh token counts after each assistant response.
+//
+// PERFORMANCE: Does NOT call estimateSavings (which reads the full transcript).
+// The submit hook already computed and saved savings estimates. This hook only
+// updates the token counts (cheap — tail-reads 32KB) and carries forward the
+// existing savings estimates from the state file.
 // ---------------------------------------------------------------------------
 let input;
 try {
@@ -61,11 +68,50 @@ if (source === "estimated") {
 	} catch {}
 }
 
-const savings = estimateSavings(transcript_path, currentTokens, maxTokens);
+// Carry forward savings estimates and baseline overhead from the existing state file.
+// This avoids re-reading and re-parsing the full transcript (~50MB at scale).
+let smartEstimatePct = 0;
+let recentEstimatePct = 0;
+let baselineOverhead = 0;
+try {
+	const sf = stateFile(session_id);
+	if (fs.existsSync(sf)) {
+		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
+		smartEstimatePct = prev.smart_estimate_pct ?? 0;
+		recentEstimatePct = prev.recent_estimate_pct ?? 0;
+		baselineOverhead = prev.baseline_overhead ?? 0;
+	}
+} catch {}
+
+// Capture baseline overhead on first response — at this point context is almost
+// entirely system prompts, CLAUDE.md, tool definitions, etc. This measured value
+// is used for all subsequent compaction estimates instead of guessing.
+if (!baselineOverhead && currentTokens > 0) {
+	baselineOverhead = currentTokens;
+	log(`baseline-overhead session=${session_id} tokens=${baselineOverhead}`);
+
+	// Recompute estimates now that we have the baseline — the submit hook ran
+	// before us and wrote 0 estimates because it didn't have the baseline yet.
+	try {
+		const savings = estimateSavings(
+			transcript_path,
+			currentTokens,
+			maxTokens,
+			baselineOverhead,
+		);
+		smartEstimatePct = savings.smartPct;
+		recentEstimatePct = savings.recentPct;
+		log(
+			`baseline-recompute session=${session_id} smart=${smartEstimatePct}% recent=${recentEstimatePct}%`,
+		);
+	} catch (e) {
+		log(`baseline-recompute-error: ${e.message}`);
+	}
+}
 
 try {
 	ensureDataDir();
-	fs.writeFileSync(
+	atomicWriteFileSync(
 		stateFile(session_id),
 		JSON.stringify({
 			current_tokens: currentTokens,
@@ -78,14 +124,17 @@ try {
 			recommendation,
 			source,
 			model: realUsage?.model || "unknown",
-			smart_estimate_pct: savings.smartPct,
-			recent_estimate_pct: savings.recentPct,
+			smart_estimate_pct: smartEstimatePct,
+			recent_estimate_pct: recentEstimatePct,
+			baseline_overhead: baselineOverhead,
 			session_id,
 			transcript_path,
 			ts: Date.now(),
 		}),
 	);
-} catch {}
+} catch (e) {
+	log(`state-write-error session=${session_id}: ${e.message}`);
+}
 
 log(
 	`state-update session=${session_id} tokens=${currentTokens}/${maxTokens} pct=${pctDisplay}% source=${source}`,

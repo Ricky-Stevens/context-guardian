@@ -9,7 +9,7 @@ let tmpDir;
 let transcriptPath;
 
 function writeLine(obj) {
-	fs.appendFileSync(transcriptPath, JSON.stringify(obj) + "\n");
+	fs.appendFileSync(transcriptPath, `${JSON.stringify(obj)}\n`);
 }
 
 function userMsg(text) {
@@ -69,10 +69,10 @@ describe("extractConversation", () => {
 		writeLine(assistantMsg("Done, I fixed it."));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(result.includes("**User:** Hello Claude"));
-		assert.ok(result.includes("**Assistant:** Hello! How can I help?"));
-		assert.ok(result.includes("**User:** Fix the bug"));
-		assert.ok(result.includes("**Assistant:** Done, I fixed it."));
+		assert.ok(result.includes("User: Hello Claude"));
+		assert.ok(result.includes("Asst: Hello! How can I help?"));
+		assert.ok(result.includes("User: Fix the bug"));
+		assert.ok(result.includes("Asst: Done, I fixed it."));
 	});
 
 	it("replaces tool-only assistant messages with placeholder", () => {
@@ -83,7 +83,7 @@ describe("extractConversation", () => {
 		const result = extractConversation(transcriptPath);
 		// Tool-only assistant message gets a tool summary
 		assert.ok(result.includes("Read `/foo`"));
-		assert.ok(result.includes("**Assistant:** Here is the file content."));
+		assert.ok(result.includes("Here is the file content."));
 	});
 
 	it("skips empty user messages", () => {
@@ -91,8 +91,8 @@ describe("extractConversation", () => {
 		writeLine(userMsg("real message"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(!result.includes("**User:** \n")); // no empty user entry
-		assert.ok(result.includes("**User:** real message"));
+		assert.ok(!result.includes("User: \n")); // no empty user entry
+		assert.ok(result.includes("User: real message"));
 	});
 
 	// --- Compact marker detection ---
@@ -104,7 +104,7 @@ describe("extractConversation", () => {
 			message: {
 				role: "user",
 				content:
-					"[SMART COMPACT — restored checkpoint]\n\n**User:** prior\n\n**Assistant:** prior answer",
+					"[SMART COMPACT — restored checkpoint]\n\nUser: prior\n\nAsst: prior answer",
 			},
 		});
 		writeLine(userMsg("new message"));
@@ -112,7 +112,7 @@ describe("extractConversation", () => {
 
 		const result = extractConversation(transcriptPath);
 		// Should NOT include "old message" — it's before the marker
-		assert.ok(!result.includes("**User:** old message"));
+		assert.ok(!result.includes("User: old message"));
 		// Should include preamble (the marker content) and new messages
 		assert.ok(result.includes("new message"));
 		assert.ok(result.includes("new response"));
@@ -130,8 +130,8 @@ describe("extractConversation", () => {
 		writeLine(userMsg("new"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(!result.includes("**User:** old"));
-		assert.ok(result.includes("**User:** new"));
+		assert.ok(!result.includes("User: old"));
+		assert.ok(result.includes("User: new"));
 	});
 
 	it("detects # Context Checkpoint marker", () => {
@@ -141,14 +141,14 @@ describe("extractConversation", () => {
 			message: {
 				role: "user",
 				content:
-					"# Context Checkpoint (Smart Compact)\n> Created: 2026-01-01\n\n**User:** hi",
+					"# Context Checkpoint (Smart Compact)\n> Created: 2026-01-01\n\nUser: hi",
 			},
 		});
 		writeLine(userMsg("new"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(!result.includes("**User:** old"));
-		assert.ok(result.includes("**User:** new"));
+		assert.ok(!result.includes("User: old"));
+		assert.ok(result.includes("User: new"));
 	});
 
 	it("uses the LAST marker when multiple exist", () => {
@@ -170,8 +170,8 @@ describe("extractConversation", () => {
 		writeLine(userMsg("latest"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(!result.includes("**User:** middle"));
-		assert.ok(result.includes("**User:** latest"));
+		assert.ok(!result.includes("User: middle"));
+		assert.ok(result.includes("User: latest"));
 	});
 
 	// --- CG menu reply filtering ---
@@ -187,9 +187,9 @@ describe("extractConversation", () => {
 		writeLine(userMsg("next real message"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(result.includes("**User:** implement feature"));
-		assert.ok(!result.includes("**User:** 2")); // menu reply filtered
-		assert.ok(result.includes("**User:** next real message"));
+		assert.ok(result.includes("User: implement feature"));
+		assert.ok(!result.includes("User: 2")); // menu reply filtered
+		assert.ok(result.includes("User: next real message"));
 	});
 
 	it("filters cancel reply after CG menu", () => {
@@ -201,7 +201,7 @@ describe("extractConversation", () => {
 		writeLine(userMsg("cancel"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(!result.includes("**User:** cancel"));
+		assert.ok(!result.includes("User: cancel"));
 	});
 
 	it("does NOT filter digits when not preceded by CG menu", () => {
@@ -210,7 +210,7 @@ describe("extractConversation", () => {
 		writeLine(userMsg("2"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(result.includes("**User:** 2")); // not filtered — assistant wasn't CG menu
+		assert.ok(result.includes("User: 2")); // not filtered — assistant wasn't CG menu
 	});
 
 	it("does NOT filter digit 5 even after CG menu", () => {
@@ -222,7 +222,7 @@ describe("extractConversation", () => {
 		writeLine(userMsg("5"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(result.includes("**User:** 5")); // only 0-4 are filtered
+		assert.ok(result.includes("User: 5")); // only 0-4 are filtered
 	});
 
 	// --- Skill injection filtering ---
@@ -236,7 +236,7 @@ describe("extractConversation", () => {
 		const result = extractConversation(transcriptPath);
 		// Long structured messages are now kept (old heuristic removed)
 		assert.ok(result.includes("Some Skill Title"));
-		assert.ok(result.includes("**User:** real message"));
+		assert.ok(result.includes("User: real message"));
 	});
 
 	it("does NOT filter short messages starting with heading", () => {
@@ -247,8 +247,7 @@ describe("extractConversation", () => {
 	});
 
 	it("does NOT filter long messages without sub-headings", () => {
-		const longMsg =
-			"# Title\n\n" + "Some long content without sub headings. ".repeat(30);
+		const longMsg = `# Title\n\n${"Some long content without sub headings. ".repeat(30)}`;
 		writeLine(userMsg(longMsg));
 
 		const result = extractConversation(transcriptPath);
@@ -262,8 +261,8 @@ describe("extractConversation", () => {
 		writeLine(userMsg("another good one"));
 
 		const result = extractConversation(transcriptPath);
-		assert.ok(result.includes("**User:** good message"));
-		assert.ok(result.includes("**User:** another good one"));
+		assert.ok(result.includes("User: good message"));
+		assert.ok(result.includes("User: another good one"));
 		assert.ok(
 			result.includes("Warning: 1 transcript line(s) could not be parsed"),
 		);
@@ -278,7 +277,7 @@ describe("extractConversation", () => {
 		const result = extractConversation(transcriptPath);
 		assert.ok(!result.includes("system prompt"));
 		assert.ok(!result.includes("working"));
-		assert.ok(result.includes("**User:** hello"));
+		assert.ok(result.includes("User: hello"));
 	});
 
 	// --- Preamble preservation ---
@@ -288,7 +287,7 @@ describe("extractConversation", () => {
 			message: {
 				role: "user",
 				content:
-					"[SMART COMPACT — restored checkpoint]\n\n**User:** old stuff\n\n**Assistant:** old answer",
+					"[SMART COMPACT — restored checkpoint]\n\nUser: old stuff\n\nAsst: old answer",
 			},
 		});
 		writeLine(userMsg("new question"));
@@ -297,7 +296,7 @@ describe("extractConversation", () => {
 		assert.ok(result.startsWith("## Session State"));
 		assert.ok(result.includes("[SMART COMPACT")); // preamble still present after header
 		assert.ok(result.includes("---")); // separator between preamble and new messages
-		assert.ok(result.includes("**User:** new question"));
+		assert.ok(result.includes("User: new question"));
 	});
 });
 
@@ -318,7 +317,10 @@ describe("extractRecent", () => {
 		// N=4 means last 4 USER messages + their grouped assistant responses
 		const result = extractRecent(transcriptPath, 4);
 		// Should have exchanges 6-9 (the last 4 user messages)
-		assert.ok(!result.includes("message 5"), "exchange 5 should be outside window");
+		assert.ok(
+			!result.includes("message 5"),
+			"exchange 5 should be outside window",
+		);
 		assert.ok(result.includes("message 6"), "exchange 6 should be in window");
 		assert.ok(result.includes("response 6"));
 		assert.ok(result.includes("message 9"), "last exchange in window");
@@ -335,8 +337,8 @@ describe("extractRecent", () => {
 		writeLine(userMsg("real message"));
 
 		const result = extractRecent(transcriptPath, 20);
-		assert.ok(!result.includes("**User:** 2"));
-		assert.ok(result.includes("**User:** real message"));
+		assert.ok(!result.includes("User: 2"));
+		assert.ok(result.includes("User: real message"));
 	});
 
 	it("filters compact markers", () => {
@@ -348,7 +350,7 @@ describe("extractRecent", () => {
 
 		const result = extractRecent(transcriptPath, 20);
 		assert.ok(!result.includes("SMART COMPACT"));
-		assert.ok(result.includes("**User:** real"));
+		assert.ok(result.includes("User: real"));
 	});
 
 	it("returns all messages when fewer than N exist", () => {
@@ -356,8 +358,8 @@ describe("extractRecent", () => {
 		writeLine(assistantMsg("one exchange"));
 
 		const result = extractRecent(transcriptPath, 20);
-		assert.ok(result.includes("**User:** only"));
-		assert.ok(result.includes("**Assistant:** one exchange"));
+		assert.ok(result.includes("User: only"));
+		assert.ok(result.includes("Asst: one exchange"));
 	});
 
 	it("handles empty transcript", () => {

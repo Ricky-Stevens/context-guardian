@@ -107,6 +107,35 @@ try {
 	log(`self-heal-error: ${e.message}`);
 }
 
+// ---------------------------------------------------------------------------
+// Auto-configure statusline in ~/.claude/settings.json if not already set.
+// Takes effect next session (Claude Code reads settings at startup, before hooks).
+// ---------------------------------------------------------------------------
+try {
+	const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
+	let settings = {};
+	if (fs.existsSync(settingsPath)) {
+		settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+	}
+	const pluginRoot =
+		process.env.CLAUDE_PLUGIN_ROOT || path.resolve(import.meta.dirname, "..");
+	const statuslineCmd = `node ${pluginRoot}/lib/statusline.mjs`;
+	if (!settings.statusLine) {
+		// No statusline configured — safe to set ours
+		settings.statusLine = { type: "command", command: statuslineCmd };
+		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+		fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+		log("auto-configured statusline in settings.json");
+	} else if (!settings.statusLine.command?.includes("statusline.mjs")) {
+		// Another statusline is configured — don't overwrite it
+		log(
+			"statusline-skip: another statusline already configured, not overwriting",
+		);
+	}
+} catch (e) {
+	log(`statusline-autoconfig-error: ${e.message}`);
+}
+
 log(
 	`session-start session=${input.session_id || "unknown"} cwd=${input.cwd || "unknown"}`,
 );

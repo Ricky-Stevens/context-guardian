@@ -5,7 +5,7 @@
 A Claude Code **plugin** that monitors context window usage and intervenes before quality degrades. Installed from GitHub with `/plugin marketplace add https://github.com/Ricky-Stevens/context-guardian
 /plugin install cg`.
 
-Three hooks + four skills + a shared library.
+Four hooks + four skills + a shared library.
 
 ## Plugin Structure
 
@@ -15,8 +15,9 @@ cg/
   package.json                     # npm distribution
   hooks/
     submit.mjs                     # UserPromptSubmit — main hook (dispatch only)
-    session-start.mjs              # SessionStart — flag cleanup
+    session-start.mjs              # SessionStart — flag cleanup, statusline auto-config, self-healing
     stop.mjs                       # Stop — writes fresh token state after each response
+    precompact.mjs                 # PreCompact — injects CG extraction into native /compact
   lib/
     paths.mjs                      # Centralized path resolution (CLAUDE_PLUGIN_DATA)
     logger.mjs                     # Shared logging
@@ -32,6 +33,9 @@ cg/
     reload-handler.mjs             # Checkpoint reload + resume after /clear
     stats.mjs                      # Compaction stats formatting
     compact-cli.mjs                # CLI entry point for skill-triggered compaction
+    estimate.mjs                   # Fast compaction savings estimator (single-pass byte scan)
+    diagnostics.mjs                # Health checks for /cg:stats
+    statusline.mjs                 # Real-time context gauge for terminal status bar
   skills/
     stats/SKILL.md                 # /cg:stats
     config/SKILL.md                # /cg:config
@@ -182,11 +186,12 @@ Includes a re-read guardrail: "You have NOT read any files in this session — r
 1. **Real counts (preferred):** Both the submit and stop hooks read `message.usage` from the most recent assistant message in the transcript JSONL (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`) and write the result to `state-{session_id}.json`. The stop hook runs after each response, so state is always up-to-date.
 2. **Byte estimation (fallback):** Content bytes after the last compact marker, divided by 4.
 3. **Post-compaction estimates:** After compaction or reload injection, a state file is written with estimated token counts so `/cg:stats` works immediately.
+4. **Baseline overhead:** The stop hook captures `baseline_overhead` on the first assistant response of each session, when context is almost entirely system prompts, CLAUDE.md, and tool definitions. This measured value is used as an irreducible floor in all compaction savings estimates, replacing the previous heuristic. Propagated through state files across submit, stop, and checkpoint writes.
 
 ## Testing
 
 ```bash
-# Run all tests (314 tests across 10 files)
+# Run all tests (453 tests across 15 files)
 bun test
 
 # Key test files:
@@ -195,6 +200,9 @@ bun test
 # test/compaction-e2e.test.mjs — 24 tests: realistic transcript with tracked facts
 # test/transcript.test.mjs     — extractConversation + extractRecent
 # test/submit.test.mjs         — hook integration tests
+# test/estimate.test.mjs       — estimateSavings + byte categorisation
+# test/statusline.test.mjs     — statusline render output + ANSI colors
+# test/tokens.test.mjs         — token counting + estimateOverhead
 
 # Local plugin testing
 claude --plugin-dir /path/to/cg

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-	startEndTrim,
+	isAffirmativeConfirmation,
 	isErrorResponse,
 	isShortErrorResponse,
-	isAffirmativeConfirmation,
 	isSystemInjection,
+	startEndTrim,
 } from "../lib/trim.mjs";
 
 // ---------------------------------------------------------------------------
@@ -140,12 +140,15 @@ describe("isShortErrorResponse", () => {
 
 	it("returns true for short error-like strings", () => {
 		assert.equal(isShortErrorResponse("Error: file not found"), true);
-		assert.equal(isShortErrorResponse("ENOENT: no such file or directory"), true);
+		assert.equal(
+			isShortErrorResponse("ENOENT: no such file or directory"),
+			true,
+		);
 		assert.equal(isShortErrorResponse("Build failed"), true);
 	});
 
 	it("returns false for long strings even with error patterns", () => {
-		const longContent = "This file has an error in it.\n" + "x".repeat(1000);
+		const longContent = `This file has an error in it.\n${"x".repeat(1000)}`;
 		assert.equal(isShortErrorResponse(longContent), false);
 	});
 
@@ -156,13 +159,13 @@ describe("isShortErrorResponse", () => {
 
 	it("returns false for exactly 500-char string with error pattern", () => {
 		// content.length < 500, so exactly 500 returns false
-		const content = "error " + "x".repeat(494);
+		const content = `error ${"x".repeat(494)}`;
 		assert.equal(content.length, 500);
 		assert.equal(isShortErrorResponse(content), false);
 	});
 
 	it("returns true for 499-char string with error pattern", () => {
-		const content = "error " + "x".repeat(493);
+		const content = `error ${"x".repeat(493)}`;
 		assert.equal(content.length, 499);
 		assert.equal(isShortErrorResponse(content), true);
 	});
@@ -301,9 +304,7 @@ describe("isSystemInjection", () => {
 
 	it("returns true for text containing both SKILL.md and plugin", () => {
 		assert.equal(
-			isSystemInjection(
-				"Loading SKILL.md from the plugin directory for cg",
-			),
+			isSystemInjection("Loading SKILL.md from the plugin directory for cg"),
 			true,
 		);
 	});

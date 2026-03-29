@@ -3,13 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { estimateTokens, getTokenUsage } from "../lib/tokens.mjs";
+import {
+	estimateOverhead,
+	estimateTokens,
+	getTokenUsage,
+} from "../lib/tokens.mjs";
 
 let tmpDir;
 let transcriptPath;
 
 function writeLine(obj) {
-	fs.appendFileSync(transcriptPath, JSON.stringify(obj) + "\n");
+	fs.appendFileSync(transcriptPath, `${JSON.stringify(obj)}\n`);
 }
 
 function makeUserMessage(text) {
@@ -236,12 +240,54 @@ describe("estimateTokens", () => {
 			message: {
 				role: "user",
 				content:
-					"# Context Checkpoint (Smart Compact)\n> Created: 2026-01-01\n\n**User:** stuff",
+					"# Context Checkpoint (Smart Compact)\n> Created: 2026-01-01\n\nUser: stuff",
 			},
 		});
 		writeLine(makeUserMessage("new"));
 
 		const estimate = estimateTokens(transcriptPath);
 		assert.ok(estimate > 0);
+	});
+});
+
+describe("estimateOverhead", () => {
+	it("returns baselineOverhead when > 0", () => {
+		assert.equal(estimateOverhead(50000, transcriptPath, 25000), 25000);
+	});
+
+	it("returns MIN_OVERHEAD when baselineOverhead is 0 and no transcriptPath", () => {
+		assert.equal(estimateOverhead(50000, null, 0), 15000);
+		assert.equal(estimateOverhead(50000, undefined, 0), 15000);
+		assert.equal(estimateOverhead(50000, "", 0), 15000);
+	});
+
+	it("returns MIN_OVERHEAD when baselineOverhead is 0 and currentTokens is 0", () => {
+		assert.equal(estimateOverhead(0, transcriptPath, 0), 15000);
+	});
+
+	it("returns MIN_OVERHEAD when baselineOverhead is undefined (default)", () => {
+		// No transcriptPath → hits the early return before file access
+		assert.equal(estimateOverhead(50000, null), 15000);
+		// No currentTokens → same
+		assert.equal(estimateOverhead(0, transcriptPath), 15000);
+	});
+
+	it("returns max(MIN_OVERHEAD, computed) for file-size-based calculation", () => {
+		// Write enough content so file size is meaningful
+		const content = "x".repeat(40000); // 40000 bytes → ~10000 estimated tokens
+		fs.writeFileSync(transcriptPath, content);
+
+		// currentTokens=50000, conversationTokens=40000/4=10000 → overhead=40000
+		const result = estimateOverhead(50000, transcriptPath, 0);
+		assert.equal(result, 40000);
+
+		// currentTokens=12000, conversationTokens=10000 → overhead=2000, clamped to MIN
+		const resultClamped = estimateOverhead(12000, transcriptPath, 0);
+		assert.equal(resultClamped, 15000);
+	});
+
+	it("returns MIN_OVERHEAD when file doesn't exist", () => {
+		const missing = path.join(tmpDir, "nonexistent.jsonl");
+		assert.equal(estimateOverhead(50000, missing, 0), 15000);
 	});
 });

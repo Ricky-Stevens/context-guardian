@@ -1,22 +1,22 @@
 {
-  "name": "cg",
-  "version": "1.4.0",
-  "description": "Automatic context window monitoring and smart compaction for Claude Code",
-  "author": "Ricky",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Ricky-Stevens/context-guardian"
-  },
-  "type": "module",
-  "scripts": {
-    "test": "node --test test/*.test.mjs",
-    "lint": "biome check hooks/ lib/"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.4.8"
-  }
+	"name": "cg",
+	"version": "1.4.1",
+	"description": "Automatic context window monitoring and smart compaction for Claude Code",
+	"author": "Ricky Stevens",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Ricky-Stevens/context-guardian"
+	},
+	"type": "module",
+	"scripts": {
+		"test": "node --test test/*.test.mjs",
+		"lint": "biome check hooks/ lib/"
+	},
+	"engines": {
+		"node": ">=18.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.8"
+	}
 }

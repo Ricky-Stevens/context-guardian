@@ -1,23 +1,29 @@
 {
-  "name": "context-guardian",
-  "owner": {
-    "name": "Ricky",
-    "email": ""
-  },
-  "plugins": [
-    {
-      "name": "cg",
-      "source": "./",
-      "description": "Automatic context window monitoring and smart compaction for Claude Code",
-      "version": "1.4.0",
-      "author": {
-        "name": "Ricky"
-      },
-      "homepage": "https://github.com/Ricky-Stevens/context-guardian",
-      "repository": "https://github.com/Ricky-Stevens/context-guardian",
-      "license": "MIT",
-      "keywords": ["context", "tokens", "compaction", "memory", "context-window"],
-      "category": "productivity"
-    }
-  ]
+	"name": "context-guardian",
+	"owner": {
+		"name": "Ricky Stevens",
+		"email": ""
+	},
+	"plugins": [
+		{
+			"name": "cg",
+			"source": "./",
+			"description": "Automatic context window monitoring and smart compaction for Claude Code",
+			"version": "1.4.1",
+			"author": {
+				"name": "Ricky"
+			},
+			"homepage": "https://github.com/Ricky-Stevens/context-guardian",
+			"repository": "https://github.com/Ricky-Stevens/context-guardian",
+			"license": "MIT",
+			"keywords": [
+				"context",
+				"tokens",
+				"compaction",
+				"memory",
+				"context-window"
+			],
+			"category": "productivity"
+		}
+	]
 }

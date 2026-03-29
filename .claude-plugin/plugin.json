@@ -1,52 +1,63 @@
 {
-  "name": "cg",
-  "version": "1.4.0",
-  "description": "Automatic context window monitoring and smart compaction for Claude Code",
-  "author": {
-    "name": "Ricky",
-    "url": "https://github.com/Ricky-Stevens"
-  },
-  "repository": "https://github.com/Ricky-Stevens/context-guardian",
-  "license": "MIT",
-  "keywords": ["context", "tokens", "compaction", "memory", "context-window"],
-  "category": "productivity",
-  "tags": ["context-management", "smart-compact", "token-monitoring"],
+	"name": "cg",
+	"version": "1.4.1",
+	"description": "Automatic context window monitoring and smart compaction for Claude Code",
+	"author": {
+		"name": "Ricky Stevens",
+		"url": "https://github.com/Ricky-Stevens"
+	},
+	"repository": "https://github.com/Ricky-Stevens/context-guardian",
+	"license": "MIT",
+	"keywords": ["context", "tokens", "compaction", "memory", "context-window"],
+	"category": "productivity",
+	"tags": ["context-management", "smart-compact", "token-monitoring"],
 
-  "skills": "./skills/",
+	"skills": "./skills/",
 
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/submit.mjs"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs"
-          }
-        ]
-      }
-    ]
-  }
+	"hooks": {
+		"SessionStart": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs"
+					}
+				]
+			}
+		],
+		"UserPromptSubmit": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/submit.mjs"
+					}
+				]
+			}
+		],
+		"PreCompact": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/precompact.mjs"
+					}
+				]
+			}
+		],
+		"Stop": [
+			{
+				"matcher": "",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs"
+					}
+				]
+			}
+		]
+	}
 }

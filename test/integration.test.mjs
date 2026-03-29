@@ -24,7 +24,7 @@ const HIGH_USAGE = {
 };
 
 function writeLine(obj) {
-	fs.appendFileSync(transcriptPath, JSON.stringify(obj) + "\n");
+	fs.appendFileSync(transcriptPath, `${JSON.stringify(obj)}\n`);
 }
 
 function makeUser(text) {
@@ -211,7 +211,10 @@ describe("checkpoint content integrity", () => {
 		assert.ok(checkpoint.includes("fix line 42"));
 		assert.ok(checkpoint.includes("null pointer"));
 		// Tool-only response gets tool summary instead of placeholder
-		assert.ok(checkpoint.includes("→ Read"), "Should have tool summary for Read");
+		assert.ok(
+			checkpoint.includes("→ Read"),
+			"Should have tool summary for Read",
+		);
 		assert.ok(checkpoint.includes("/foo.js"), "Should reference the file path");
 	});
 });
@@ -234,9 +237,9 @@ describe("message ordering preservation", () => {
 			assert.ok(result.includes(`step ${i} done`), `Missing done ${i}`);
 		}
 
-		// Find positions of **User:** and **Assistant:** tagged messages
+		// Find positions of User: and Asst: tagged messages
 		// (skip the Session State header which may reference the last message)
-		const bodyStart = result.indexOf("---\n\n**");
+		const bodyStart = result.indexOf("---\n\n[");
 		assert.ok(bodyStart >= 0, "Should have message body after header");
 		const body = result.slice(bodyStart);
 		const positions = [];
@@ -259,12 +262,12 @@ describe("message ordering preservation", () => {
 
 		const result = extractRecent(transcriptPath, 6); // last 6 messages
 		// Search in message body after the Session State header
-		const bodyStart = result.indexOf("---\n\n**");
+		const bodyStart = result.indexOf("---\n\n[");
 		assert.ok(bodyStart >= 0, "Should have message body after header");
 		const body = result.slice(bodyStart);
-		const pos8 = body.indexOf("**User:** msg 8");
-		const pos9 = body.indexOf("**User:** msg 9");
-		const pos10 = body.indexOf("**User:** msg 10");
+		const pos8 = body.indexOf("User: msg 8");
+		const pos9 = body.indexOf("User: msg 9");
+		const pos10 = body.indexOf("User: msg 10");
 		assert.ok(pos8 >= 0, "msg 8 should be present");
 		assert.ok(pos9 >= 0, "msg 9 should be present");
 		assert.ok(pos10 >= 0, "msg 10 should be present");
@@ -284,7 +287,7 @@ describe("successive compaction integrity", () => {
 			message: {
 				role: "user",
 				content:
-					"[SMART COMPACT — restored checkpoint]\n\n**User:** original question\n\n**Assistant:** original answer",
+					"[SMART COMPACT — restored checkpoint]\n\nUser: original question\n\nAsst: original answer",
 			},
 		});
 		// New messages after restore
@@ -302,8 +305,8 @@ describe("successive compaction integrity", () => {
 
 		// "follow-up question" appears in the message body; it may also
 		// appear in the Session State header's "Goal:" line as a summary.
-		// The key invariant is that it appears exactly once as a **User:** message.
-		const userMatches = result.match(/\*\*User:\*\* follow-up question/g);
+		// The key invariant is that it appears exactly once as a User: message.
+		const userMatches = result.match(/User: follow-up question/g);
 		assert.equal(
 			userMatches.length,
 			1,
@@ -322,9 +325,9 @@ describe("successive compaction integrity", () => {
 		writeLine(makeUser("new stuff"));
 
 		const result = extractConversation(transcriptPath);
-		// The marker should be the preamble, not a **User:** entry
-		assert.ok(!result.includes("**User:** [KEEP RECENT"));
-		assert.ok(result.includes("**User:** new stuff"));
+		// The marker should be the preamble, not a User: entry
+		assert.ok(!result.includes("User: [KEEP RECENT"));
+		assert.ok(result.includes("User: new stuff"));
 	});
 });
 
@@ -363,7 +366,7 @@ describe("full compaction round-trip", () => {
 		const freshTranscript = path.join(tmpDir, "fresh-transcript.jsonl");
 		fs.writeFileSync(
 			freshTranscript,
-			JSON.stringify(makeUser("hello after clear")) + "\n",
+			`${JSON.stringify(makeUser("hello after clear"))}\n`,
 		);
 
 		const injectResult = runHook({
@@ -400,8 +403,12 @@ describe("full compaction round-trip", () => {
 
 		// Step 2: Simulate reload in fresh session (creates resume file)
 		const freshTranscript = path.join(tmpDir, "fresh2.jsonl");
-		fs.writeFileSync(freshTranscript, JSON.stringify(makeUser("hello")) + "\n");
-		runHook({ prompt: "hello", transcript_path: freshTranscript, session_id: "fresh-session-5678" });
+		fs.writeFileSync(freshTranscript, `${JSON.stringify(makeUser("hello"))}\n`);
+		runHook({
+			prompt: "hello",
+			transcript_path: freshTranscript,
+			session_id: "fresh-session-5678",
+		});
 
 		// Step 3: Verify resume file exists with correct prompt
 		const resumeFile = path.join(dataDir, `resume-${cwdH}.json`);
@@ -501,7 +508,7 @@ describe("degenerate transcript handling", () => {
 		assert.ok(!result.includes("**Assistant:**"));
 	});
 
-	it("transcript with only tool interactions produces placeholders and file list", () => {
+	it("transcript with only tool interactions produces header but no message body", () => {
 		writeLine(makeUser(""));
 		writeLine({
 			type: "assistant",
@@ -525,11 +532,18 @@ describe("degenerate transcript handling", () => {
 		});
 
 		const result = extractConversation(transcriptPath);
-		// No user messages (all empty), but tool-only assistants get tool summaries
-		assert.ok(!result.includes("**User:**"));
+		// Empty user messages are skipped; tool-only assistants without a user exchange are omitted
 		assert.ok(
-			result.includes("→ Read") || result.includes("→ Edit") || result.includes("→ Ran"),
-			"Should have tool summaries for tool-only responses",
+			result.startsWith("## Session State"),
+			"Should have state header",
+		);
+		assert.ok(
+			result.includes("Tool operations:"),
+			"Should track tool operations",
+		);
+		assert.ok(
+			result.includes("Files modified:"),
+			"Should track files modified",
 		);
 	});
 
@@ -557,7 +571,10 @@ describe("degenerate transcript handling", () => {
 		assert.ok(result.includes("I'll fix that bug now."));
 		assert.ok(result.includes("Done, the bug is fixed."));
 		// File tracked in Session State header as "Files modified"
-		assert.ok(result.includes("Files modified"), "Should have Files modified in header");
+		assert.ok(
+			result.includes("Files modified"),
+			"Should have Files modified in header",
+		);
 		assert.ok(result.includes("/bug.js"), "Should reference the edited file");
 		// Tool use produces a summary, not raw tool_use JSON
 		assert.ok(!result.includes('"type":"tool_use"'));

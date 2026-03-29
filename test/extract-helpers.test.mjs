@@ -3,8 +3,6 @@ import { describe, it } from "node:test";
 import {
 	generateStateHeader,
 	isCGMenuMessage,
-	processAssistantContent,
-	processUserContent,
 	shouldSkipUserMessage,
 } from "../lib/extract-helpers.mjs";
 
@@ -25,9 +23,7 @@ describe("generateStateHeader", () => {
 	});
 
 	it("extracts multiple ticket IDs", () => {
-		const msgs = [
-			"**User:** Fix ZEP-4471 and check INC-2891 and SEC-0042",
-		];
+		const msgs = ["**User:** Fix ZEP-4471 and check INC-2891 and SEC-0042"];
 		const header = generateStateHeader(msgs, new Set(), 0);
 		assert.ok(header.includes("ZEP-4471"));
 		assert.ok(header.includes("INC-2891"));
@@ -44,9 +40,7 @@ describe("generateStateHeader", () => {
 	});
 
 	it("filters date-like false positives from topics", () => {
-		const msgs = [
-			"**User:** On Saturday March 15th we discovered the issue",
-		];
+		const msgs = ["**User:** On Saturday March 15th we discovered the issue"];
 		const header = generateStateHeader(msgs, new Set(), 0);
 		const topicsLine = header.split("\n").find((l) => l.startsWith("Topics"));
 		assert.ok(!topicsLine.includes("Saturday March"));
@@ -70,9 +64,7 @@ describe("generateStateHeader", () => {
 	});
 
 	it("extracts decision subjects", () => {
-		const msgs = [
-			"**User:** I chose Option B for sharding",
-		];
+		const msgs = ["**User:** I chose Option B for sharding"];
 		const header = generateStateHeader(msgs, new Set(), 0);
 		assert.ok(header.includes("B for sharding"));
 	});
@@ -105,19 +97,23 @@ describe("generateStateHeader", () => {
 	it("skips code block messages for Goal", () => {
 		const msgs = [
 			"**User:** ```\nsome code\n```",
-			"**User:** Fix the bug",
+			"**User:** Fix the bug in the authentication module",
 		];
 		const header = generateStateHeader(msgs, new Set(), 0);
-		assert.ok(header.includes("Goal: Fix the bug"));
+		assert.ok(
+			header.includes("Goal: Fix the bug in the authentication module"),
+		);
 	});
 
 	it("skips command-message injections for Goal", () => {
 		const msgs = [
 			"**User:** <command-message>compact</command-message>",
-			"**User:** Real question",
+			"**User:** Real question about the deployment pipeline",
 		];
 		const header = generateStateHeader(msgs, new Set(), 0);
-		assert.ok(header.includes("Goal: Real question"));
+		assert.ok(
+			header.includes("Goal: Real question about the deployment pipeline"),
+		);
 	});
 
 	it("skips short filler for Last action", () => {
@@ -138,11 +134,7 @@ describe("generateStateHeader", () => {
 
 	it("shows files modified", () => {
 		const files = new Set(["src/a.js", "src/b.js"]);
-		const header = generateStateHeader(
-			["**User:** fix stuff"],
-			files,
-			5,
-		);
+		const header = generateStateHeader(["**User:** fix stuff"], files, 5);
 		assert.ok(header.includes("src/a.js"));
 		assert.ok(header.includes("src/b.js"));
 	});
@@ -196,17 +188,13 @@ describe("shouldSkipUserMessage", () => {
 	});
 
 	it("skips system injections", () => {
-		assert.ok(
-			shouldSkipUserMessage("# Context Checkpoint\ndata", false).skip,
-		);
+		assert.ok(shouldSkipUserMessage("# Context Checkpoint\ndata", false).skip);
 	});
 
 	it("skips command-message injections", () => {
 		assert.ok(
-			shouldSkipUserMessage(
-				"<command-message>compact</command-message>",
-				false,
-			).skip,
+			shouldSkipUserMessage("<command-message>compact</command-message>", false)
+				.skip,
 		);
 	});
 

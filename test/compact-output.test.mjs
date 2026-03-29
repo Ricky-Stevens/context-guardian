@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-	compactMessages,
-	detectProjectRoot,
-} from "../lib/compact-output.mjs";
+import { compactMessages, detectProjectRoot } from "../lib/compact-output.mjs";
 
 // ---------------------------------------------------------------------------
-// compactMessages
+// compactMessages — exchange-grouped output with noise stripping
 // ---------------------------------------------------------------------------
 
 describe("compactMessages", () => {
@@ -14,15 +11,18 @@ describe("compactMessages", () => {
 		assert.deepEqual(compactMessages([]), []);
 	});
 
-	it("passes through normal user and assistant messages", () => {
+	it("groups user + assistant messages into exchange blocks with [N] anchors", () => {
 		const msgs = [
 			"**User:** hello",
 			"**Assistant:** hi there, how can I help?",
+			"**User:** fix the bug",
+			"**Assistant:** Done, I fixed it.",
 		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 2);
+		assert.ok(result.length >= 1);
+		assert.ok(result[0].includes("[1]"));
 		assert.ok(result[0].includes("hello"));
-		assert.ok(result[1].includes("hi there"));
+		assert.ok(result[0].includes("hi there"));
 	});
 
 	// R4: Phatic stripping
@@ -31,158 +31,142 @@ describe("compactMessages", () => {
 			"**User:** remember this",
 			"**Assistant:** Confirmed — ready for the test.",
 			"**User:** next thing",
+			"**Assistant:** Working on it.",
 		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 2);
 		assert.ok(!result.some((m) => m.includes("Confirmed")));
 	});
 
-	it("strips 'Memories checked' phatic", () => {
+	it("strips 'Done.' trivial assistant messages", () => {
 		const msgs = [
-			"**Assistant:** Memories checked. Ready to go.",
-			"**User:** do stuff",
+			"**User:** edit the file",
+			"**Assistant:** → Edit `foo.js`:\n    old: | x\n    new: | y",
+			"**Assistant:** Done.",
+			"**User:** next",
+			"**Assistant:** OK.",
 		];
 		const result = compactMessages(msgs);
-		assert.ok(!result.some((m) => m.includes("Memories checked")));
+		assert.ok(!result.some((m) => /\bDone\.\s*$/.test(m)));
 	});
 
 	it("does NOT strip long assistant messages starting with phatic words", () => {
 		const longMsg =
 			"**Assistant:** Confirmed — here is the detailed analysis: " +
 			"x".repeat(200);
-		const msgs = [longMsg];
+		const msgs = ["**User:** question", longMsg];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 1);
-		assert.ok(result[0].includes("detailed analysis"));
+		assert.ok(result.some((m) => m.includes("detailed analysis")));
 	});
 
 	it("does NOT strip assistant messages that don't match phatic patterns", () => {
-		const msgs = ["**Assistant:** I'll investigate the bug now."];
+		const msgs = [
+			"**User:** fix it",
+			"**Assistant:** I'll investigate the bug now.",
+		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 1);
+		assert.ok(result.some((m) => m.includes("investigate the bug")));
 	});
 
 	// R3: Operational noise stripping
 	it("strips stats box messages", () => {
 		const msgs = [
+			"**User:** check stats",
 			"**Assistant:** ┌───\n│  Context Guardian Stats\n│\n│  Current usage: 50,000\n└───",
 		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 0);
-	});
-
-	it("strips compact-cli JSON output", () => {
-		const msgs = [
-			'**Assistant:** ← {"success":true,"statsBlock":"┌── Compaction Stats"}',
-		];
-		const result = compactMessages(msgs);
-		assert.equal(result.length, 0);
-	});
-
-	it("strips checkpoint saved messages", () => {
-		const msgs = [
-			"**Assistant:** ┌──\n│  Checkpoint saved — NOT applied yet.\n└──",
-		];
-		const result = compactMessages(msgs);
-		assert.equal(result.length, 0);
+		assert.ok(!result.some((m) => m.includes("Context Guardian Stats")));
 	});
 
 	it("strips date +%s commands", () => {
-		const msgs = ["**Assistant:** → Ran `date +%s`\n← 1774736467"];
-		const result = compactMessages(msgs);
-		assert.equal(result.length, 0);
-	});
-
-	it("strips state file reads", () => {
 		const msgs = [
-			"**Assistant:** → Read `state-abc123.json`\nsome content",
+			"**User:** check time",
+			"**Assistant:** → Ran `date +%s`\n← 1774736467",
 		];
-		// This won't match because the pattern checks for state- in path
-		// Let me use the exact pattern
-		const msgs2 = [
-			"**Assistant:** → Read /data/state-abc123.json",
-		];
-		const result = compactMessages(msgs2);
-		assert.equal(result.length, 0);
+		const result = compactMessages(msgs);
+		assert.ok(!result.some((m) => m.includes("date +%s")));
 	});
 
-	// R2: Tool note grouping
+	it("strips meta-tool ToolSearch invocations", () => {
+		const msgs = [
+			"**User:** find the tool",
+			'**Assistant:** → Tool: `ToolSearch` {"query":"select:mcp__serena__list_memories"}',
+			"**Assistant:** → Serena: list memories",
+			"**Assistant:** Here are the results.",
+		];
+		const result = compactMessages(msgs);
+		assert.ok(!result.some((m) => m.includes("ToolSearch")));
+	});
+
+	// R2: Tool note grouping within exchanges
 	it("groups consecutive Read notes into one line", () => {
 		const msgs = [
+			"**User:** read these",
 			"**Assistant:** → Read `lib/a.mjs`",
 			"**Assistant:** → Read `lib/b.mjs`",
 			"**Assistant:** → Read `lib/c.mjs`",
 		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 1);
-		assert.ok(result[0].includes("lib/a.mjs"));
-		assert.ok(result[0].includes("lib/b.mjs"));
-		assert.ok(result[0].includes("lib/c.mjs"));
-		assert.ok(result[0].includes("; "));
+		// All reads should be in one exchange block
+		const block = result.find((m) => m.includes("a.mjs"));
+		assert.ok(block);
+		assert.ok(block.includes("b.mjs"));
+		assert.ok(block.includes("c.mjs"));
 	});
 
-	it("groups mixed Read/Grep/Glob notes", () => {
+	// Merging consecutive assistant messages
+	it("merges consecutive assistant text into one exchange block", () => {
 		const msgs = [
-			"**Assistant:** → Read `lib/a.mjs`",
-			"**Assistant:** → Grep `pattern` in `src/`",
-			"**Assistant:** → Glob `*.test.mjs`",
+			"**User:** analyze this",
+			"**Assistant:** First observation.",
+			"**Assistant:** Second observation.",
+			"**Assistant:** Third observation.",
 		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 1);
+		// Should be one exchange block containing all three
+		const block = result.find((m) => m.includes("First observation"));
+		assert.ok(block);
+		assert.ok(block.includes("Second observation"));
+		assert.ok(block.includes("Third observation"));
 	});
 
-	it("does NOT group multi-line entries with >4 lines", () => {
-		const bigWrite =
-			"**Assistant:** → Write `out.txt`:\n    line1\n    line2\n    line3\n    line4\n    line5";
+	it("merges bare ← lines into exchange block", () => {
 		const msgs = [
-			"**Assistant:** → Read `a.mjs`",
-			bigWrite,
-			"**Assistant:** → Read `b.mjs`",
+			"**User:** run tests",
+			"**Assistant:** → Ran `npm test`",
+			"← 14 passed",
 		];
 		const result = compactMessages(msgs);
-		// Read a.mjs should be its own (flushed before bigWrite)
-		// bigWrite is its own
-		// Read b.mjs is its own
-		assert.equal(result.length, 3);
+		const block = result[0];
+		assert.ok(block.includes("npm test"));
+		assert.ok(block.includes("14 passed"));
 	});
 
-	it("groups short multi-line entries (<=4 lines)", () => {
-		const shortWrite = "**Assistant:** → Write `/tmp/test.txt`:\n    content";
+	it("separates exchanges at User boundaries", () => {
 		const msgs = [
-			"**Assistant:** → Read `a.mjs`",
-			shortWrite,
+			"**User:** first question",
+			"**Assistant:** first answer",
+			"**User:** second question",
+			"**Assistant:** second answer",
 		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 1); // grouped together
+		assert.ok(result.length >= 2);
+		assert.ok(result[0].includes("first"));
+		assert.ok(result[1].includes("second"));
 	});
 
-	// Bare tool lines merge into previous
-	it("merges bare ← lines into previous message", () => {
+	it("adds [N] exchange anchors", () => {
 		const msgs = [
-			"**Assistant:** some text",
-			"← tool output here",
+			"**User:** q1",
+			"**Assistant:** a1",
+			"**User:** q2",
+			"**Assistant:** a2",
+			"**User:** q3",
+			"**Assistant:** a3",
 		];
 		const result = compactMessages(msgs);
-		assert.equal(result.length, 1);
-		assert.ok(result[0].includes("some text"));
-		assert.ok(result[0].includes("← tool output here"));
-	});
-
-	it("preserves non-grouped messages between groups", () => {
-		const msgs = [
-			"**Assistant:** → Read `a.mjs`",
-			"**Assistant:** → Read `b.mjs`",
-			"**User:** what did you find?",
-			"**Assistant:** → Read `c.mjs`",
-			"**Assistant:** → Read `d.mjs`",
-		];
-		const result = compactMessages(msgs);
-		assert.equal(result.length, 3); // group1, user, group2
-		assert.ok(result[0].includes("a.mjs"));
-		assert.ok(result[0].includes("b.mjs"));
-		assert.ok(result[1].includes("what did you find"));
-		assert.ok(result[2].includes("c.mjs"));
-		assert.ok(result[2].includes("d.mjs"));
+		assert.ok(result[0].includes("[1]"));
+		assert.ok(result[1].includes("[2]"));
+		assert.ok(result[2].includes("[3]"));
 	});
 });
 
@@ -268,16 +252,17 @@ describe("detectProjectRoot", () => {
 			makeLine("Read", "/old/project/a.mjs"),
 			makeLine("Read", "/old/project/b.mjs"),
 			makeLine("Read", "/old/project/c.mjs"),
-			// startIdx = 3: only these count
 			makeLine("Read", "/new/project/d.mjs"),
 		];
-		// Only 1 path from startIdx=3, so should return empty
 		assert.equal(detectProjectRoot(lines, 3), "");
 	});
 
 	it("skips non-assistant lines", () => {
 		const lines = [
-			JSON.stringify({ type: "user", message: { role: "user", content: "hi" } }),
+			JSON.stringify({
+				type: "user",
+				message: { role: "user", content: "hi" },
+			}),
 			makeLine("Read", "/home/user/proj/a.mjs"),
 			makeLine("Read", "/home/user/proj/b.mjs"),
 			makeLine("Read", "/home/user/proj/c.mjs"),

@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
-	CHECKPOINTS_DIR,
 	ensureDataDir,
 	projectStateFiles,
 	rotateCheckpoints,
@@ -73,7 +72,7 @@ describe("submit hook — corrupt reload file", () => {
 		const tp = path.join(tmpDir, "transcript.jsonl");
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "assistant",
 				message: {
 					role: "assistant",
@@ -86,7 +85,7 @@ describe("submit hook — corrupt reload file", () => {
 						output_tokens: 2,
 					},
 				},
-			}) + "\n",
+			})}\n`,
 		);
 
 		try {
@@ -124,7 +123,7 @@ describe("submit hook — corrupt config", () => {
 		const tp = path.join(tmpDir, "transcript-corrupt-cfg.jsonl");
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "assistant",
 				message: {
 					role: "assistant",
@@ -137,7 +136,7 @@ describe("submit hook — corrupt config", () => {
 						output_tokens: 2,
 					},
 				},
-			}) + "\n",
+			})}\n`,
 		);
 
 		try {
@@ -164,12 +163,15 @@ describe("submit hook — corrupt config", () => {
 // transcript.mjs — large file tail read (lines 22-34)
 // =========================================================================
 describe("transcript — large file tail read", () => {
-	it("handles transcript larger than 10MB by reading tail", () => {
+	it("reads full transcript under 50MB cap", () => {
 		const tp = path.join(tmpDir, "large-transcript.jsonl");
 
 		const oldLine = JSON.stringify({
 			type: "user",
-			message: { role: "user", content: "this should be dropped by tail read" },
+			message: {
+				role: "user",
+				content: "old message preserved under 50MB cap",
+			},
 		});
 
 		const paddingLine = JSON.stringify({
@@ -177,22 +179,23 @@ describe("transcript — large file tail read", () => {
 			message: { content: "x".repeat(150) },
 		});
 
-		let content = oldLine + "\n";
+		let content = `${oldLine}\n`;
+		// 11MB file — well under the 50MB cap, so ALL content is preserved
 		const lines = Math.ceil((11 * 1024 * 1024) / (paddingLine.length + 1));
 		for (let i = 0; i < lines; i++) {
-			content += paddingLine + "\n";
+			content += `${paddingLine}\n`;
 		}
-		content +=
-			JSON.stringify({
-				type: "user",
-				message: { role: "user", content: "this is the recent message" },
-			}) + "\n";
+		content += `${JSON.stringify({
+			type: "user",
+			message: { role: "user", content: "this is the recent message" },
+		})}\n`;
 
 		fs.writeFileSync(tp, content);
 
 		const result = extractConversation(tp);
-		assert.ok(result.includes("**User:** this is the recent message"));
-		assert.ok(!result.includes("this should be dropped"));
+		assert.ok(result.includes("User: this is the recent message"));
+		// Under the 50MB cap, old content is preserved (not tail-dropped)
+		assert.ok(result.includes("old message preserved under 50MB cap"));
 	});
 });
 
@@ -208,7 +211,7 @@ describe("tokens — tiered read exhaustion", () => {
 		});
 		let content = "";
 		for (let i = 0; i < 60; i++) {
-			content += line + "\n";
+			content += `${line}\n`;
 		}
 		fs.writeFileSync(tp, content);
 
@@ -229,22 +232,22 @@ describe("extractRecent — skill injection filter", () => {
 			"x".repeat(800);
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "user",
 				message: { role: "user", content: skillContent },
-			}) + "\n",
+			})}\n`,
 		);
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "user",
 				message: { role: "user", content: "real message" },
-			}) + "\n",
+			})}\n`,
 		);
 
 		const result = extractRecent(tp, 20);
 		assert.ok(!result.includes("Skill Title"));
-		assert.ok(result.includes("**User:** real message"));
+		assert.ok(result.includes("User: real message"));
 	});
 });
 
@@ -256,26 +259,26 @@ describe("extractRecent — parse errors", () => {
 		const tp = path.join(tmpDir, "recent-errors.jsonl");
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "user",
 				message: { role: "user", content: "good" },
-			}) + "\n",
+			})}\n`,
 		);
 		fs.appendFileSync(tp, "bad json line\n");
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "assistant",
 				message: {
 					role: "assistant",
 					content: [{ type: "text", text: "response" }],
 				},
-			}) + "\n",
+			})}\n`,
 		);
 
 		const result = extractRecent(tp, 20);
-		assert.ok(result.includes("**User:** good"));
-		assert.ok(result.includes("**Assistant:** response"));
+		assert.ok(result.includes("User: good"));
+		assert.ok(result.includes("Asst: response"));
 		assert.ok(result.includes("Warning: 1 transcript line(s)"));
 	});
 });
@@ -288,26 +291,26 @@ describe("extractRecent — compact marker filtering", () => {
 		const tp = path.join(tmpDir, "recent-checkpoint.jsonl");
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "user",
 				message: {
 					role: "user",
 					content:
-						"# Context Checkpoint (Smart Compact)\n> Created: 2026\n\n**User:** old",
+						"# Context Checkpoint (Smart Compact)\n> Created: 2026\n\nUser: old",
 				},
-			}) + "\n",
+			})}\n`,
 		);
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "user",
 				message: { role: "user", content: "real message" },
-			}) + "\n",
+			})}\n`,
 		);
 
 		const result = extractRecent(tp, 20);
 		assert.ok(!result.includes("Context Checkpoint"));
-		assert.ok(result.includes("**User:** real message"));
+		assert.ok(result.includes("User: real message"));
 	});
 });
 
@@ -342,7 +345,7 @@ describe("tokens — both read tiers exhausted", () => {
 		// ~2KB per line, need ~1100 lines for >2MB
 		const fd = fs.openSync(tp, "w");
 		for (let i = 0; i < 1100; i++) {
-			fs.writeSync(fd, line + "\n");
+			fs.writeSync(fd, `${line}\n`);
 		}
 		fs.closeSync(fd);
 
@@ -408,10 +411,10 @@ describe("extractRecent — long heading no sub-headings", () => {
 			"Some content without any sub-headings at all. ".repeat(25);
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "user",
 				message: { role: "user", content: longMsg },
-			}) + "\n",
+			})}\n`,
 		);
 
 		const result = extractRecent(tp, 20);
@@ -427,14 +430,21 @@ describe("extractRecent — assistant string content", () => {
 		const tp = path.join(tmpDir, "recent-string-content.jsonl");
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
+				type: "user",
+				message: { role: "user", content: "hello there" },
+			})}\n`,
+		);
+		fs.appendFileSync(
+			tp,
+			`${JSON.stringify({
 				type: "assistant",
 				message: { role: "assistant", content: "plain string response" },
-			}) + "\n",
+			})}\n`,
 		);
 
 		const result = extractRecent(tp, 20);
-		assert.ok(result.includes("**Assistant:** plain string response"));
+		assert.ok(result.includes("Asst: plain string response"));
 	});
 });
 
@@ -446,21 +456,21 @@ describe("extractConversation — assistant string content", () => {
 		const tp = path.join(tmpDir, "conv-string-content.jsonl");
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "user",
 				message: { role: "user", content: "hello" },
-			}) + "\n",
+			})}\n`,
 		);
 		fs.appendFileSync(
 			tp,
-			JSON.stringify({
+			`${JSON.stringify({
 				type: "assistant",
 				message: { role: "assistant", content: "plain string response" },
-			}) + "\n",
+			})}\n`,
 		);
 
 		const result = extractConversation(tp);
-		assert.ok(result.includes("**Assistant:** plain string response"));
+		assert.ok(result.includes("Asst: plain string response"));
 	});
 });
 

@@ -16,7 +16,7 @@ let flagsDir;
 let cwdH; // cwd hash for project-scoped files
 
 function writeLine(obj) {
-	fs.appendFileSync(transcriptPath, JSON.stringify(obj) + "\n");
+	fs.appendFileSync(transcriptPath, `${JSON.stringify(obj)}\n`);
 }
 
 function runHook(input) {
@@ -432,7 +432,7 @@ describe("reload detection", () => {
 		);
 		fs.writeFileSync(
 			checkpointPath,
-			"# Context Checkpoint\n\n**User:** prior message\n\n**Assistant:** prior response",
+			"# Context Checkpoint\n\nUser: prior message\n\nAsst: prior response",
 		);
 		const reload = {
 			checkpoint_path: checkpointPath,
@@ -515,7 +515,7 @@ describe("reload detection", () => {
 		writeLine(makeAssistant("hi there", HIGH_USAGE));
 		writeLine(makeUser("next question"));
 
-		const result = runHook({ prompt: "next question" });
+		const _result = runHook({ prompt: "next question" });
 		// Should NOT inject (same session) — falls through to token check
 		// Reload file should still exist (not consumed)
 		assert.ok(fs.existsSync(path.join(dataDir, `reload-${cwdH}.json`)));
@@ -578,7 +578,9 @@ describe("manual compact", () => {
 
 		const result = runHook({ prompt: "go" });
 		assert.ok(result.hookSpecificOutput);
-		assert.ok(result.hookSpecificOutput.additionalContext.includes("Compaction Stats"));
+		assert.ok(
+			result.hookSpecificOutput.additionalContext.includes("Compaction Stats"),
+		);
 	});
 
 	it("runs keep recent when flag contains 'recent'", () => {
@@ -590,7 +592,9 @@ describe("manual compact", () => {
 
 		const result = runHook({ prompt: "go" });
 		assert.ok(result.hookSpecificOutput);
-		assert.ok(result.hookSpecificOutput.additionalContext.includes("Compaction Stats"));
+		assert.ok(
+			result.hookSpecificOutput.additionalContext.includes("Compaction Stats"),
+		);
 	});
 
 	it("rejects invalid mode in flag file", () => {
@@ -611,7 +615,9 @@ describe("manual compact", () => {
 		writeLine(makeUser(""));
 		const result = runHook({ prompt: "go" });
 		assert.ok(result.hookSpecificOutput);
-		assert.ok(result.hookSpecificOutput.additionalContext.includes("Could not extract"));
+		assert.ok(
+			result.hookSpecificOutput.additionalContext.includes("Could not extract"),
+		);
 	});
 
 	it("warns on empty extraction for prune", () => {
@@ -622,7 +628,9 @@ describe("manual compact", () => {
 		writeLine(makeUser(""));
 		const result = runHook({ prompt: "go" });
 		assert.ok(result.hookSpecificOutput);
-		assert.ok(result.hookSpecificOutput.additionalContext.includes("Could not extract"));
+		assert.ok(
+			result.hookSpecificOutput.additionalContext.includes("Could not extract"),
+		);
 	});
 
 	it("creates reload file with correct mode", () => {

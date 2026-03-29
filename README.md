@@ -80,7 +80,7 @@ Extracts full conversation history, strips tool calls, tool results, thinking bl
 
 ### `/cg:prune`
 
-Drops oldest messages, keeps the last 20 meaningful text messages (tool-only assistant turns don't count). Good when only recent work matters.
+Drops oldest messages, keeps the last 10 user exchanges (each grouped with their assistant responses). Good when only recent work matters.
 
 ---
 
@@ -225,8 +225,9 @@ The cooldown is cleared by:
 | Hook | Event | Purpose |
 |------|-------|---------|
 | `submit.mjs` | `UserPromptSubmit` | Main logic - monitors usage, shows menu, handles compaction, resume, cooldown |
-| `session-start.mjs` | `SessionStart` | Cleans up session flags, stale resume/cooldown files |
-| `stop.mjs` | `Stop` | Writes fresh token state after each assistant response. Also written by submit hook before each turn. |
+| `session-start.mjs` | `SessionStart` | Cleans up session flags, auto-configures statusline, self-healing marketplace clone |
+| `stop.mjs` | `Stop` | Writes fresh token state after each assistant response. Captures baseline overhead on first response. |
+| `precompact.mjs` | `PreCompact` | Injects CG's extraction as additional context into Claude Code's native `/compact` |
 
 ### Token Counting
 
@@ -237,6 +238,20 @@ Two methods, preferring the more accurate. State is written by **both** the subm
 2. **Byte estimation (fallback):** Only used on the very first message of a session (before any assistant response). Counts content bytes after the most recent compact marker and divides by 4.
 
 3. **Post-compaction estimates:** After compaction or checkpoint restore, a state file is written with estimated post-compaction token counts so `/cg:stats` works immediately - no need to send a message first.
+
+### Baseline Overhead
+
+On the first assistant response of each session, the stop hook captures the current token count as `baseline_overhead` — at that point, context is almost entirely system prompts, CLAUDE.md, and tool definitions. This measured value serves as an irreducible floor in all compaction savings estimates, replacing the previous heuristic.
+
+### Statusline
+
+Context Guardian auto-configures a terminal statusline on first session start. It shows real-time context usage:
+
+```
+Context usage: 3% | 32% remaining until alert | /cg:stats for more
+```
+
+Color-coded green/yellow/red based on usage level. If another statusline is already configured, CG won't overwrite it.
 
 ### Model & Tokens Auto-Detection
 

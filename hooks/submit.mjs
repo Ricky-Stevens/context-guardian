@@ -20,6 +20,7 @@ import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
 import { estimateSavings } from "../lib/estimate.mjs";
 import { log } from "../lib/logger.mjs";
 import {
+	atomicWriteFileSync,
 	ensureDataDir,
 	projectStateFiles,
 	sessionFlags,
@@ -42,6 +43,11 @@ const { session_id = "unknown", prompt, transcript_path } = input;
 
 const flags = sessionFlags(input.cwd, session_id);
 const pState = projectStateFiles(input.cwd);
+
+// Ensure flags directory exists early — all code paths may write flag files
+try {
+	fs.mkdirSync(flags.dir, { recursive: true });
+} catch {}
 
 function output(obj) {
 	process.stdout.write(JSON.stringify(obj));
@@ -98,7 +104,7 @@ if (cMode) {
 		},
 	});
 	try {
-		fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
+		atomicWriteFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
 	} catch {}
 	process.exit(0);
 }
@@ -114,7 +120,9 @@ if (fs.existsSync(flags.menu)) {
 		let originalPrompt = "";
 		try {
 			originalPrompt = fs.readFileSync(flags.prompt, "utf8");
-		} catch {}
+		} catch (e) {
+			log(`prompt-read-error session=${session_id}: ${e.message}`);
+		}
 
 		log(`menu-reply choice=${choice} session=${session_id}`);
 
@@ -124,7 +132,10 @@ if (fs.existsSync(flags.menu)) {
 				fs.unlinkSync(flags.warned);
 			} catch {}
 			try {
-				fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
+				atomicWriteFileSync(
+					pState.cooldown,
+					JSON.stringify({ ts: Date.now() }),
+				);
 			} catch {}
 			output({
 				hookSpecificOutput: {
@@ -184,7 +195,10 @@ if (fs.existsSync(flags.menu)) {
 		// Cooldown for compaction/clear choices
 		if (["2", "3", "4"].includes(choice)) {
 			try {
-				fs.writeFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
+				atomicWriteFileSync(
+					pState.cooldown,
+					JSON.stringify({ ts: Date.now() }),
+				);
 			} catch {}
 		}
 		try {
@@ -278,11 +292,26 @@ else
 	recommendation =
 		"At threshold. Compaction recommended — the warning menu will trigger on your next message.";
 
-const savings = estimateSavings(transcript_path, currentTokens, maxTokens);
+// Read measured baseline overhead from state (captured by stop hook on first response)
+let baselineOverhead = 0;
+try {
+	const sf = stateFile(session_id);
+	if (fs.existsSync(sf)) {
+		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
+		baselineOverhead = prev.baseline_overhead ?? 0;
+	}
+} catch {}
+
+const savings = estimateSavings(
+	transcript_path,
+	currentTokens,
+	maxTokens,
+	baselineOverhead,
+);
 
 try {
 	ensureDataDir();
-	fs.writeFileSync(
+	atomicWriteFileSync(
 		stateFile(session_id),
 		JSON.stringify({
 			current_tokens: currentTokens,
@@ -297,18 +326,58 @@ try {
 			model: realUsage?.model || "unknown",
 			smart_estimate_pct: savings.smartPct,
 			recent_estimate_pct: savings.recentPct,
+			baseline_overhead: baselineOverhead,
 			session_id,
 			transcript_path,
 			ts: Date.now(),
 		}),
 	);
-} catch {}
+} catch (e) {
+	log(`state-write-error session=${session_id}: ${e.message}`);
+}
 
 // Below threshold — reset warned flag so it can re-fire
 if (pct < threshold) {
 	try {
 		fs.unlinkSync(flags.warned);
 	} catch {}
+
+	// Graduated nudges — soft context hints via additionalContext (no blocking).
+	// One-time per crossing: uses flag files so each level only fires once.
+	const nudge50 = `${flags.dir}/cg-nudge50-${session_id}`;
+	const nudge65 = `${flags.dir}/cg-nudge65-${session_id}`;
+	const pctInt = Math.round(pct * 100);
+	const tokensRemaining = Math.max(
+		0,
+		maxTokens - currentTokens,
+	).toLocaleString();
+
+	if (pct >= 0.65 && !fs.existsSync(nudge65)) {
+		fs.mkdirSync(flags.dir, { recursive: true });
+		fs.writeFileSync(nudge65, "1");
+		log(`nudge-65 session=${session_id} pct=${pctInt}%`);
+		output({
+			hookSpecificOutput: {
+				hookEventName: "UserPromptSubmit",
+				additionalContext: `[Context Guardian] Context window is ${pctInt}% full (~${tokensRemaining} tokens remaining). Consider running /cg:compact soon. Prefer concise responses and avoid unnecessary file reads.`,
+			},
+		});
+		process.exit(0);
+	}
+
+	if (pct >= 0.5 && !fs.existsSync(nudge50)) {
+		fs.mkdirSync(flags.dir, { recursive: true });
+		fs.writeFileSync(nudge50, "1");
+		log(`nudge-50 session=${session_id} pct=${pctInt}%`);
+		output({
+			hookSpecificOutput: {
+				hookEventName: "UserPromptSubmit",
+				additionalContext: `[Context Guardian] Context window is ${pctInt}% full (~${tokensRemaining} tokens remaining). Run /cg:stats for details.`,
+			},
+		});
+		process.exit(0);
+	}
+
 	process.exit(0);
 }
 
@@ -345,16 +414,15 @@ log(
 );
 
 const currentPct = Math.round(pct * 100);
-const est = estimateSavings(transcript_path, currentTokens, maxTokens);
-
+// Reuse `savings` computed at line 281 — avoid duplicate transcript scan
 output({
 	decision: "block",
 	reason: [
 		`Context Guardian — ~${currentPct}% used (~${currentTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens)`,
 		``,
 		`  1  Continue           ~${currentPct}%`,
-		`  2  Smart Compact      ~${currentPct}% → ~${est.smartPct}%`,
-		`  3  Keep Recent 20     ~${currentPct}% → ~${est.recentPct}%`,
+		`  2  Smart Compact      ~${currentPct}% → ~${savings.smartPct}%`,
+		`  3  Keep Recent 20     ~${currentPct}% → ~${savings.recentPct}%`,
 		`  4  Clear              ~${currentPct}% → 0%`,
 		``,
 		`Reply with 1, 2, 3, or 4.`,

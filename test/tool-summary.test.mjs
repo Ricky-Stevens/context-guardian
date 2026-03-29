@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-	summarizeToolUse,
-	summarizeToolResult,
-	formatEditDiff,
 	contentBlockPlaceholder,
+	formatEditDiff,
+	summarizeToolResult,
+	summarizeToolUse,
 } from "../lib/tool-summary.mjs";
 
 // ---------------------------------------------------------------------------
@@ -320,14 +320,11 @@ describe("summarizeToolUse", () => {
 
 	describe("Sequential thinking", () => {
 		it("includes step N/M and thought text", () => {
-			const block = toolUse(
-				"mcp__sequential-thinking__sequentialthinking",
-				{
-					thought: "Let me consider the trade-offs here.",
-					thoughtNumber: 2,
-					totalThoughts: 5,
-				},
-			);
+			const block = toolUse("mcp__sequential-thinking__sequentialthinking", {
+				thought: "Let me consider the trade-offs here.",
+				thoughtNumber: 2,
+				totalThoughts: 5,
+			});
 			const result = summarizeToolUse(block);
 			assert.ok(result.includes("step 2/5"));
 			assert.ok(result.includes("Let me consider the trade-offs here."));
@@ -335,14 +332,11 @@ describe("summarizeToolUse", () => {
 
 		it("trims long thoughts", () => {
 			const longThought = chars(3000);
-			const block = toolUse(
-				"mcp__sequential-thinking__sequentialthinking",
-				{
-					thought: longThought,
-					thoughtNumber: 1,
-					totalThoughts: 1,
-				},
-			);
+			const block = toolUse("mcp__sequential-thinking__sequentialthinking", {
+				thought: longThought,
+				thoughtNumber: 1,
+				totalThoughts: 1,
+			});
 			const result = summarizeToolUse(block);
 			assert.ok(result.includes("trimmed from middle"));
 			assert.ok(result.length < longThought.length);
@@ -353,10 +347,9 @@ describe("summarizeToolUse", () => {
 
 	describe("Context-mode execute", () => {
 		it("note only with language", () => {
-			const block = toolUse(
-				"mcp__plugin_context-mode_context-mode__execute",
-				{ language: "python" },
-			);
+			const block = toolUse("mcp__plugin_context-mode_context-mode__execute", {
+				language: "python",
+			});
 			const result = summarizeToolUse(block);
 			assert.ok(result.includes("Context-mode:"));
 			assert.ok(result.includes("python"));
@@ -381,19 +374,13 @@ describe("summarizeToolUse", () => {
 
 	describe("Context-mode stats/index", () => {
 		it("returns null for stats (removed)", () => {
-			const block = toolUse(
-				"mcp__plugin_context-mode_context-mode__stats",
-				{},
-			);
+			const block = toolUse("mcp__plugin_context-mode_context-mode__stats", {});
 			const result = summarizeToolUse(block);
 			assert.equal(result, null);
 		});
 
 		it("returns null for index (removed)", () => {
-			const block = toolUse(
-				"mcp__plugin_context-mode_context-mode__index",
-				{},
-			);
+			const block = toolUse("mcp__plugin_context-mode_context-mode__index", {});
 			const result = summarizeToolUse(block);
 			assert.equal(result, null);
 		});
@@ -479,20 +466,18 @@ describe("summarizeToolResult", () => {
 
 	it("removes Read result (re-obtainable)", () => {
 		const longContent = chars(5000);
-		const result = summarizeToolResult(
-			toolResult(longContent),
-			{ name: "Read" },
-		);
+		const result = summarizeToolResult(toolResult(longContent), {
+			name: "Read",
+		});
 		assert.equal(result, null);
 	});
 
 	// ── 3. Read result with short error ──────────────────────────────────
 
 	it("keeps short error from Read result (<500 chars)", () => {
-		const result = summarizeToolResult(
-			toolResult("Error: file not found"),
-			{ name: "Read" },
-		);
+		const result = summarizeToolResult(toolResult("Error: file not found"), {
+			name: "Read",
+		});
 		assert.ok(result !== null);
 		assert.ok(result.includes("Error"));
 	});
@@ -501,39 +486,35 @@ describe("summarizeToolResult", () => {
 
 	it("removes Read result with long content containing 'error' (false positive)", () => {
 		// A long file that happens to mention "error" is not a tool failure
-		const longContent = chars(600) + " error " + chars(600);
-		const result = summarizeToolResult(
-			toolResult(longContent),
-			{ name: "Read" },
-		);
+		const longContent = `${chars(600)} error ${chars(600)}`;
+		const result = summarizeToolResult(toolResult(longContent), {
+			name: "Read",
+		});
 		assert.equal(result, null);
 	});
 
 	// ── 5. Grep/Glob result — removed ────────────────────────────────────
 
 	it("removes Grep result", () => {
-		const result = summarizeToolResult(
-			toolResult("src/a.js:10: match"),
-			{ name: "Grep" },
-		);
+		const result = summarizeToolResult(toolResult("src/a.js:10: match"), {
+			name: "Grep",
+		});
 		assert.equal(result, null);
 	});
 
 	it("removes Glob result", () => {
-		const result = summarizeToolResult(
-			toolResult("src/a.js\nsrc/b.js"),
-			{ name: "Glob" },
-		);
+		const result = summarizeToolResult(toolResult("src/a.js\nsrc/b.js"), {
+			name: "Glob",
+		});
 		assert.equal(result, null);
 	});
 
 	// ── 6. Edit/Write result — removed ───────────────────────────────────
 
 	it("removes Edit result", () => {
-		const result = summarizeToolResult(
-			toolResult("File edited successfully"),
-			{ name: "Edit" },
-		);
+		const result = summarizeToolResult(toolResult("File edited successfully"), {
+			name: "Edit",
+		});
 		assert.equal(result, null);
 	});
 
@@ -548,10 +529,9 @@ describe("summarizeToolResult", () => {
 	// ── 7. Bash result, short (<5000) ────────────────────────────────────
 
 	it("keeps short Bash result in full", () => {
-		const result = summarizeToolResult(
-			toolResult("12 passed, 0 failed"),
-			{ name: "Bash" },
-		);
+		const result = summarizeToolResult(toolResult("12 passed, 0 failed"), {
+			name: "Bash",
+		});
 		assert.ok(result !== null);
 		assert.ok(result.includes("12 passed, 0 failed"));
 	});
@@ -560,10 +540,9 @@ describe("summarizeToolResult", () => {
 
 	it("trims long Bash result with start+end", () => {
 		const longOutput = chars(8000, "o");
-		const result = summarizeToolResult(
-			toolResult(longOutput),
-			{ name: "Bash" },
-		);
+		const result = summarizeToolResult(toolResult(longOutput), {
+			name: "Bash",
+		});
 		assert.ok(result !== null);
 		assert.ok(result.includes("trimmed from middle"));
 		assert.ok(result.length < longOutput.length);
@@ -585,10 +564,9 @@ describe("summarizeToolResult", () => {
 
 	it("trims long Agent result with start+end", () => {
 		const longResult = chars(3000);
-		const result = summarizeToolResult(
-			toolResult(longResult),
-			{ name: "Agent" },
-		);
+		const result = summarizeToolResult(toolResult(longResult), {
+			name: "Agent",
+		});
 		assert.ok(result !== null);
 		assert.ok(result.includes("Agent result:"));
 		assert.ok(result.includes("trimmed from middle"));
@@ -597,30 +575,27 @@ describe("summarizeToolResult", () => {
 	// ── 11. Sequential thinking result — removed ─────────────────────────
 
 	it("removes sequential thinking result (redundant)", () => {
-		const result = summarizeToolResult(
-			toolResult("Thought recorded"),
-			{ name: "mcp__sequential-thinking__sequentialthinking" },
-		);
+		const result = summarizeToolResult(toolResult("Thought recorded"), {
+			name: "mcp__sequential-thinking__sequentialthinking",
+		});
 		assert.equal(result, null);
 	});
 
 	// ── 12. Context-mode result — removed ────────────────────────────────
 
 	it("removes context-mode result", () => {
-		const result = summarizeToolResult(
-			toolResult("Execution complete"),
-			{ name: "mcp__plugin_context-mode_context-mode__execute" },
-		);
+		const result = summarizeToolResult(toolResult("Execution complete"), {
+			name: "mcp__plugin_context-mode_context-mode__execute",
+		});
 		assert.equal(result, null);
 	});
 
 	// ── 13. Serena memory result — removed ───────────────────────────────
 
 	it("removes Serena memory result", () => {
-		const result = summarizeToolResult(
-			toolResult("Memory saved"),
-			{ name: "mcp__serena__write_memory" },
-		);
+		const result = summarizeToolResult(toolResult("Memory saved"), {
+			name: "mcp__serena__write_memory",
+		});
 		assert.equal(result, null);
 	});
 
@@ -638,10 +613,9 @@ describe("summarizeToolResult", () => {
 	// ── 15. Unknown tool, short result (<1000) ──────────────────────────
 
 	it("keeps short unknown tool result", () => {
-		const result = summarizeToolResult(
-			toolResult("some short output"),
-			{ name: "UnknownTool" },
-		);
+		const result = summarizeToolResult(toolResult("some short output"), {
+			name: "UnknownTool",
+		});
 		assert.ok(result !== null);
 		assert.ok(result.includes("some short output"));
 	});
@@ -650,10 +624,9 @@ describe("summarizeToolResult", () => {
 
 	it("trims long unknown tool result", () => {
 		const longResult = chars(1500);
-		const result = summarizeToolResult(
-			toolResult(longResult),
-			{ name: "UnknownTool" },
-		);
+		const result = summarizeToolResult(toolResult(longResult), {
+			name: "UnknownTool",
+		});
 		assert.ok(result !== null);
 		assert.ok(result.includes("trimmed from middle"));
 	});
@@ -666,10 +639,7 @@ describe("summarizeToolResult", () => {
 	});
 
 	it("returns null for empty string content", () => {
-		const result = summarizeToolResult(
-			toolResult(""),
-			{ name: "Bash" },
-		);
+		const result = summarizeToolResult(toolResult(""), { name: "Bash" });
 		assert.equal(result, null);
 	});
 
@@ -684,10 +654,9 @@ describe("summarizeToolResult", () => {
 	// ── Array content format ────────────────────────────────────────────
 
 	it("handles array content format in tool_result", () => {
-		const result = summarizeToolResult(
-			toolResultArray(["line 1", "line 2"]),
-			{ name: "Bash" },
-		);
+		const result = summarizeToolResult(toolResultArray(["line 1", "line 2"]), {
+			name: "Bash",
+		});
 		assert.ok(result !== null);
 		assert.ok(result.includes("line 1"));
 		assert.ok(result.includes("line 2"));

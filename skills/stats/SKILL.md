@@ -33,7 +33,7 @@ If the file does not exist, display this and stop:
 
 Run: `date +%s`
 
-Subtract `ts / 1000` (ts is in milliseconds) from the result. Show as:
+Compute the difference: `(result of date +%s) - (ts / 1000)`. Do NOT show this calculation in the output. Only show the final relative time:
 - Under 60 seconds: "X seconds ago"
 - 60-3599 seconds: "X minutes ago"
 - 3600+ seconds: "X hours ago"
@@ -63,7 +63,7 @@ All values come directly from the JSON — use them as-is. Pre-computed fields: 
 
 ## Step 4 — Run diagnostics
 
-Run: `node ${CLAUDE_PLUGIN_ROOT}/lib/diagnostics.mjs`
+Run: `node ${CLAUDE_PLUGIN_ROOT}/lib/diagnostics.mjs ${CLAUDE_SESSION_ID} ${CLAUDE_PLUGIN_ROOT} ${CLAUDE_PLUGIN_DATA}`
 
 Parse the JSON output. If **all** checks have `ok: true`, append this line inside the box before the closing `└`:
 
