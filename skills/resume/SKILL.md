@@ -39,14 +39,18 @@ node ${CLAUDE_PLUGIN_ROOT}/lib/resume-cli.mjs load <filepath>
 
 Where `<filepath>` is the `path` field from the selected file object.
 
-The output is JSON with `content` and `type`.
+The output is a JSON string. Parse it. The `content` field contains the full handoff/checkpoint text.
+
+**IMPORTANT:** The `content` field in the JSON response IS the restored context. Do NOT read any files. Do NOT use the Read tool. The content is already in the JSON output — just use it directly.
 
 ## Step 3: Apply the context
 
-After loading, tell the user:
+Tell the user (one line only):
 
-> Context restored from [type] ([date]). I have NOT read any files in this session — I'll re-read anything I need before making changes.
+> Context restored from [type]. I have NOT read any files in this session — I'll re-read anything I need before making changes.
 
-Then treat the loaded `content` as prior session context. Use it to understand what was previously worked on, but re-read any files before editing them.
+Then treat the `content` value from Step 2 as prior session context. Use it to understand what was previously worked on, but re-read any files before editing them.
+
+Do NOT summarise the restored context unless asked. Do NOT read any files to "verify" the restore.
 
 $ARGUMENTS
