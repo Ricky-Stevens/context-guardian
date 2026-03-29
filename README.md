@@ -42,7 +42,7 @@ claude --plugin-dir /path/to/cg
 
 ## Commands
 
-Context Guardian adds four slash commands:
+Context Guardian adds six slash commands:
 
 ### `/cg:stats`
 
@@ -57,8 +57,11 @@ Context Guardian adds four slash commands:
 │  Model:           claude-opus-4-6 / 1,000,000 tokens
 │  Last updated:    12 seconds ago
 │
-│  /cg:compact      ~37.2% → ~5%
-│  /cg:prune        ~37.2% → ~3%
+│  /cg:compact         ~37.2% → ~5%
+│  /cg:prune           ~37.2% → ~3%
+│
+│  /cg:handoff [name]  save session for later
+│  /cg:resume          restore a previous session
 │
 └─────────────────────────────────────────────────
 ```
@@ -81,6 +84,39 @@ Extracts full conversation history, strips tool calls, tool results, thinking bl
 ### `/cg:prune`
 
 Drops oldest messages, keeps the last 10 user exchanges (each grouped with their assistant responses). Good when only recent work matters.
+
+### `/cg:handoff`
+
+Save your current session context for later. Uses the same deterministic extraction engine as Smart Compact — strips tool noise, keeps all decisions and code changes.
+
+```bash
+/cg:handoff                    # save without a description
+/cg:handoff my auth refactor   # save with a custom name
+```
+
+Handoff files are saved to `.context-guardian/` in your project root. It is recommended to .gitignore this folder.
+
+### `/cg:resume`
+
+Restore context from a previous session. Shows a menu of available handoffs:
+
+```
+┌──────────────────────────────────────────────────────────────────────────
+│  Previous Sessions
+├──────────────────────────────────────────────────────────────────────────
+│  [1]  my auth refactor (3 hours ago · 42KB)
+│  [2]  implement fibonacci (yesterday · 18KB)
+│
+│  Reply with a number to restore, or continue to start a new session.
+└──────────────────────────────────────────────────────────────────────────
+```
+
+Pick a number to restore that session's context, or just keep working for a fresh start.
+
+```bash
+/cg:resume       # show handoffs only
+/cg:resume all   # also show compaction checkpoints
+```
 
 ---
 
@@ -272,6 +308,15 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 | `resume-{hash}.json` | Stores original prompt for `resume` replay (project-scoped) |
 | `cooldown-{hash}.json` | Prevents warning re-trigger for 2 minutes (project-scoped) |
 | `checkpoints/` | Saved compaction checkpoints (markdown) |
+
+Additionally, each project has a `.context-guardian/` directory at its root containing:
+
+| File | Purpose |
+|------|---------|
+| `cg-handoff-[name]-{datetime}.md` | Session handoff files (from `/cg:handoff`) |
+| `cg-checkpoint-{datetime}.md` | Copies of compaction checkpoints (for `/cg:resume all`) |
+
+These files are project-scoped — each project gets its own isolated set. Add `.context-guardian/` to your `.gitignore`.
 
 The `{hash}` suffix is a short SHA-256 of the project directory, ensuring multiple simultaneous sessions in different projects don't interfere.
 

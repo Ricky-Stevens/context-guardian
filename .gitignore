@@ -1,6 +1,7 @@
 .idea/
 .serena/
 .claude/
+.context-guardian/
 
 node_modules/
 test/fixtures/

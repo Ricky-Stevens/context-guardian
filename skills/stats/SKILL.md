@@ -55,8 +55,11 @@ All values come directly from the JSON — use them as-is. Pre-computed fields: 
 │  Model:           {model} / {max_tokens with commas} tokens
 │  Last updated:    {computed relative time}
 │
-│  /cg:compact      ~{pct_display}% → ~{smart_estimate_pct}%
-│  /cg:prune        ~{pct_display}% → ~{recent_estimate_pct}%
+│  /cg:compact         ~{pct_display}% → ~{smart_estimate_pct}%
+│  /cg:prune           ~{pct_display}% → ~{recent_estimate_pct}%
+│
+│  /cg:handoff [name]  save session for later
+│  /cg:resume          restore a previous session
 │
 └─────────────────────────────────────────────────
 ```
