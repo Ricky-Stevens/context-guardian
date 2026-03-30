@@ -164,6 +164,103 @@ describe("estimateSavings", () => {
 		expect(withoutOverhead.smartPct).not.toBe(withOverhead.smartPct);
 	});
 
+	test("returns zeros when maxTokens is zero or NaN", () => {
+		const p = writeTranscript("zero-max.jsonl", [
+			userText("hello"),
+			assistantText("hi"),
+		]);
+		expect(estimateSavings(p, 1000, 0)).toEqual({ smartPct: 0, recentPct: 0 });
+		expect(estimateSavings(p, 1000, NaN)).toEqual({
+			smartPct: 0,
+			recentPct: 0,
+		});
+		expect(estimateSavings(p, 1000, -100)).toEqual({
+			smartPct: 0,
+			recentPct: 0,
+		});
+	});
+
+	test("thinking blocks are categorised as removable", () => {
+		const p = writeTranscript("thinking.jsonl", [
+			userText("solve this problem"),
+			{
+				type: "assistant",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "thinking",
+							thinking: "Let me think about this carefully... ".repeat(100),
+						},
+						{ type: "text", text: "The answer is 42." },
+					],
+				},
+			},
+		]);
+
+		const result = estimateSavings(p, 50000, 200000);
+		// Thinking is removed, text is kept — smartPct should be less than raw
+		const rawPct = (50000 / 200000) * 100;
+		expect(result.smartPct).toBeLessThan(rawPct);
+	});
+
+	test("tool_use blocks are partially kept (summary ratio)", () => {
+		const p = writeTranscript("tool-use.jsonl", [
+			userText("read the file"),
+			{
+				type: "assistant",
+				message: {
+					role: "assistant",
+					content: [
+						{
+							type: "tool_use",
+							id: "t1",
+							name: "Read",
+							input: { file_path: "/some/very/long/path/to/file.js" },
+						},
+						{ type: "text", text: "Here is the file content." },
+					],
+				},
+			},
+		]);
+
+		const result = estimateSavings(p, 50000, 200000);
+		// Should produce non-zero estimates
+		expect(result.smartPct).toBeGreaterThan(0);
+	});
+
+	test("assistant string content (non-array) is categorised as kept", () => {
+		const p = writeTranscript("string-content.jsonl", [
+			userText("hello"),
+			{
+				type: "assistant",
+				message: { role: "assistant", content: "Simple string response" },
+			},
+		]);
+
+		const result = estimateSavings(p, 50000, 200000);
+		expect(result.smartPct).toBeGreaterThan(0);
+	});
+
+	test("redacted_thinking blocks are categorised as removable", () => {
+		const p = writeTranscript("redacted.jsonl", [
+			userText("think about this"),
+			{
+				type: "assistant",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "redacted_thinking" },
+						{ type: "text", text: "Done thinking." },
+					],
+				},
+			},
+		]);
+
+		const result = estimateSavings(p, 50000, 200000);
+		expect(result.smartPct).toBeGreaterThan(0);
+	});
+
 	test("userExchanges counting — 20 exchanges makes recentPct less than smartPct", () => {
 		// Build 20 user exchanges with large messages so that the transcript
 		// byte count (and thus estimated conversation tokens) is large relative

@@ -370,3 +370,166 @@ describe("extractRecent", () => {
 		assert.ok(result.includes("Messages preserved: 0"));
 	});
 });
+
+// =========================================================================
+// Preamble trimming — large prior compacted history gets start+end trimmed
+// =========================================================================
+describe("extractConversation — preamble trimming", () => {
+	it("trims oversized preamble from prior compaction", () => {
+		// Simulate a restored checkpoint followed by new messages
+		const bigPreamble = "Prior conversation content. ".repeat(2000); // ~54K chars
+		writeLine({
+			type: "user",
+			message: {
+				role: "user",
+				content: `[SMART COMPACT — restored checkpoint]\n\n${bigPreamble}`,
+			},
+		});
+		writeLine(userMsg("new question after restore"));
+		writeLine(assistantMsg("new answer after restore"));
+
+		const result = extractConversation(transcriptPath);
+		// The preamble should be trimmed (>30K limit)
+		assert.ok(result.includes("chars of prior history trimmed"), "Preamble should be trimmed");
+		// New messages should be present
+		assert.ok(result.includes("new question after restore"));
+		assert.ok(result.includes("new answer after restore"));
+	});
+});
+
+// =========================================================================
+// Checkpoint footer — generated for sessions with >15 messages + tool ops
+// =========================================================================
+describe("extractConversation — checkpoint footer", () => {
+	it("generates footer when session has >15 messages with tool operations", () => {
+		// Write 18 exchanges, some with Edit tool patterns
+		for (let i = 1; i <= 18; i++) {
+			writeLine(userMsg(`task ${i}: fix the code`));
+			writeLine({
+				type: "assistant",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "text", text: `Working on task ${i}.` },
+						{
+							type: "tool_use",
+							id: `e${i}`,
+							name: "Edit",
+							input: {
+								file_path: `/app${i}.js`,
+								old_string: `old${i}`,
+								new_string: `new${i}`,
+							},
+						},
+					],
+				},
+			});
+		}
+
+		const result = extractConversation(transcriptPath);
+		// Footer should reference edit exchanges
+		assert.ok(
+			result.includes("Edit") || result.includes("edit"),
+			"Should reference edits in footer or body",
+		);
+	});
+
+	it("does not generate footer for short sessions", () => {
+		for (let i = 1; i <= 5; i++) {
+			writeLine(userMsg(`task ${i}`));
+			writeLine(assistantMsg(`done ${i}`));
+		}
+
+		const result = extractConversation(transcriptPath);
+		// Short sessions (< 15 messages) should have no footer
+		assert.ok(
+			!result.includes("Quick reference"),
+			"Short sessions should not have footer",
+		);
+	});
+});
+
+// =========================================================================
+// Edit coalescing — overlapping edits to same file get merged
+// =========================================================================
+describe("extractConversation — edit coalescing", () => {
+	it("coalesces successive edits to same file region", () => {
+		writeLine(userMsg("refactor the function"));
+		// First edit
+		writeLine({
+			type: "assistant",
+			message: {
+				role: "assistant",
+				content: [
+					{ type: "text", text: "I'll refactor step by step." },
+					{
+						type: "tool_use",
+						id: "e1",
+						name: "Edit",
+						input: {
+							file_path: "/app.js",
+							old_string: "function old() { return 1; }",
+							new_string: "function mid() { return 2; }",
+						},
+					},
+				],
+			},
+		});
+		writeLine({
+			type: "user",
+			message: {
+				role: "user",
+				content: [
+					{
+						type: "tool_result",
+						tool_use_id: "e1",
+						content: "success",
+					},
+				],
+			},
+		});
+		// Second edit to same region (old_string matches previous new_string)
+		writeLine({
+			type: "assistant",
+			message: {
+				role: "assistant",
+				content: [
+					{ type: "text", text: "Now finishing the refactor." },
+					{
+						type: "tool_use",
+						id: "e2",
+						name: "Edit",
+						input: {
+							file_path: "/app.js",
+							old_string: "function mid() { return 2; }",
+							new_string: "function final() { return 3; }",
+						},
+					},
+				],
+			},
+		});
+		writeLine({
+			type: "user",
+			message: {
+				role: "user",
+				content: [
+					{
+						type: "tool_result",
+						tool_use_id: "e2",
+						content: "success",
+					},
+				],
+			},
+		});
+
+		const result = extractConversation(transcriptPath);
+		// Should show coalesced edit with first old + last new
+		assert.ok(result.includes("function old()"), "Should have first old_string");
+		assert.ok(result.includes("function final()"), "Should have last new_string");
+		// Should mention coalescing
+		assert.ok(
+			result.includes("coalesced") || result.includes("edits"),
+			"Should indicate edits were coalesced or show edit summary",
+		);
+	});
+});

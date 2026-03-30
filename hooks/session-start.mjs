@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { log } from "../lib/logger.mjs";
-import { DATA_DIR, projectStateFiles } from "../lib/paths.mjs";
+import {
+	atomicWriteFileSync,
+	DATA_DIR,
+	projectStateFiles,
+} from "../lib/paths.mjs";
 
 let input;
 try {
@@ -36,18 +40,19 @@ if (fs.existsSync(flagsDir)) {
 	} catch {}
 }
 
-// Clear stale resume prompt and cooldown from previous sessions.
+// Clear stale resume prompt from previous sessions.
 // Only delete if older than STALE_MS — a fresh resume file may have just
 // been created by the reload handler in another session's submit hook.
 const pState = projectStateFiles(input.cwd);
 const now2 = Date.now();
-for (const f of [pState.resume, pState.cooldown]) {
-	try {
-		if (fs.existsSync(f) && now2 - fs.statSync(f).mtimeMs > STALE_MS) {
-			fs.unlinkSync(f);
-		}
-	} catch {}
-}
+try {
+	if (
+		fs.existsSync(pState.resume) &&
+		now2 - fs.statSync(pState.resume).mtimeMs > STALE_MS
+	) {
+		fs.unlinkSync(pState.resume);
+	}
+} catch {}
 
 // Clean up stale session-scoped state files (state-*.json) in DATA_DIR.
 // Each session writes its own state file; old ones accumulate.
@@ -89,7 +94,7 @@ try {
 				(entry.source?.repo
 					? `https://github.com/${entry.source.repo}.git`
 					: null);
-			if (url) {
+			if (url?.startsWith("https://")) {
 				log(
 					`self-heal: marketplace dir missing at ${entry.installLocation}, cloning from ${url}`,
 				);
@@ -99,6 +104,7 @@ try {
 					["clone", "--depth", "1", url, entry.installLocation],
 					{ stdio: "ignore", detached: true },
 				);
+				child.on("error", (e) => log(`self-heal-clone-error: ${e.message}`));
 				child.unref();
 			}
 		}
@@ -108,9 +114,11 @@ try {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-configure statusline in ~/.claude/settings.json if not already set.
+// Statusline dominance — the statusline is CG's primary UX for context
+// pressure. We ensure it's always configured and reclaim it if overwritten.
 // Takes effect next session (Claude Code reads settings at startup, before hooks).
 // ---------------------------------------------------------------------------
+let statuslineReclaimed = false;
 try {
 	const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
 	let settings = {};
@@ -120,17 +128,21 @@ try {
 	const pluginRoot =
 		process.env.CLAUDE_PLUGIN_ROOT || path.resolve(import.meta.dirname, "..");
 	const statuslineCmd = `node ${pluginRoot}/lib/statusline.mjs`;
+	const isCG = settings.statusLine?.command?.includes("statusline.mjs");
+
 	if (!settings.statusLine) {
-		// No statusline configured — safe to set ours
+		// No statusline configured — set ours
 		settings.statusLine = { type: "command", command: statuslineCmd };
 		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-		fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+		atomicWriteFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 		log("auto-configured statusline in settings.json");
-	} else if (!settings.statusLine.command?.includes("statusline.mjs")) {
-		// Another statusline is configured — don't overwrite it
-		log(
-			"statusline-skip: another statusline already configured, not overwriting",
-		);
+	} else if (!isCG) {
+		// Another statusline is configured — reclaim it for CG
+		const prev = settings.statusLine.command || "(unknown)";
+		settings.statusLine = { type: "command", command: statuslineCmd };
+		atomicWriteFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+		log(`statusline-reclaimed: overwriting "${prev}" with CG statusline`);
+		statuslineReclaimed = true;
 	}
 } catch (e) {
 	log(`statusline-autoconfig-error: ${e.message}`);
@@ -139,3 +151,16 @@ try {
 log(
 	`session-start session=${input.session_id || "unknown"} cwd=${input.cwd || "unknown"}`,
 );
+
+// Warn user if statusline was reclaimed from another tool
+if (statuslineReclaimed) {
+	process.stdout.write(
+		JSON.stringify({
+			hookSpecificOutput: {
+				hookEventName: "SessionStart",
+				additionalContext:
+					"[Context Guardian] The statusline was reclaimed from another tool. CG uses the statusline to display real-time context usage — it is essential for monitoring context pressure. The change takes effect on your next session.",
+			},
+		}),
+	);
+}

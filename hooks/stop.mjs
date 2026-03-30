@@ -52,14 +52,15 @@ else if (pct < threshold)
 	recommendation = "Approaching threshold. Consider wrapping up complex tasks.";
 else
 	recommendation =
-		"At threshold. Compaction recommended — the warning menu will trigger on your next message.";
+		"At threshold. Compaction recommended — run /cg:compact or /cg:prune.";
 
 // Don't overwrite a recent state file with estimated data — the reload handler
 // or submit hook may have written accurate post-compaction counts that we'd clobber.
 if (source === "estimated") {
 	const sf = stateFile(session_id);
 	try {
-		if (fs.existsSync(sf) && Date.now() - fs.statSync(sf).mtimeMs < 30000) {
+		const sfStat = fs.statSync(sf);
+		if (Date.now() - sfStat.mtimeMs < 30000) {
 			log(
 				`state-skip session=${session_id} — not overwriting recent state with estimate`,
 			);

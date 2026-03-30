@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
+	atomicWriteFileSync,
+	CHECKPOINTS_DIR,
 	ensureDataDir,
 	projectStateFiles,
 	rotateCheckpoints,
@@ -15,7 +17,11 @@ import {
 	stateFile,
 } from "../lib/paths.mjs";
 import { getTokenUsage } from "../lib/tokens.mjs";
-import { extractConversation, extractRecent } from "../lib/transcript.mjs";
+import {
+	extractConversation,
+	extractRecent,
+	readTranscriptLines,
+} from "../lib/transcript.mjs";
 
 const HOOK_PATH = path.resolve("hooks/submit.mjs");
 
@@ -382,15 +388,12 @@ describe("paths — fallback branches", () => {
 		const files = projectStateFiles("/some/path");
 		assert.ok(files.reload.includes("reload-"));
 		assert.ok(files.resume.includes("resume-"));
-		assert.ok(files.cooldown.includes("cooldown-"));
 	});
 
 	it("sessionFlags returns paths with sessionId", () => {
 		const flags = sessionFlags("/some/project", "sess-42");
-		assert.ok(flags.warned.includes("cg-warned-sess-42"));
-		assert.ok(flags.menu.includes("cg-menu-sess-42"));
-		assert.ok(flags.prompt.includes("cg-prompt-sess-42"));
 		assert.ok(flags.compactMenu.includes("cg-compact-sess-42"));
+		assert.ok(flags.clearReminded.includes("cg-reminded-sess-42"));
 	});
 
 	it("ensureDataDir does not throw", () => {
@@ -497,5 +500,113 @@ describe("logger", () => {
 		log("first call");
 		log("second call — should skip mkdir");
 		assert.ok(true);
+	});
+
+	it("log rotates when file exceeds 5MB", () => {
+		const logFile = path.join(os.homedir(), ".claude", "logs", "cg.log");
+		const rotated = `${logFile}.1`;
+		// Write >5MB to trigger rotation
+		const bigContent = "x".repeat(5.1 * 1024 * 1024);
+		fs.writeFileSync(logFile, bigContent);
+		log("trigger rotation");
+		// After rotation, the current log should be small (just our message)
+		const size = fs.statSync(logFile).size;
+		assert.ok(size < 1024 * 1024, `Log should be small after rotation, got ${size}`);
+		// Rotated file should exist
+		assert.ok(fs.existsSync(rotated), "Rotated log file should exist");
+		// Clean up
+		try {
+			fs.unlinkSync(rotated);
+		} catch {}
+	});
+});
+
+// =========================================================================
+// paths.mjs — atomicWriteFileSync
+// =========================================================================
+describe("atomicWriteFileSync", () => {
+	it("writes data atomically", () => {
+		const target = path.join(tmpDir, "atomic-test.txt");
+		atomicWriteFileSync(target, "hello world");
+		assert.equal(fs.readFileSync(target, "utf8"), "hello world");
+	});
+
+	it("overwrites existing file atomically", () => {
+		const target = path.join(tmpDir, "atomic-overwrite.txt");
+		fs.writeFileSync(target, "old content");
+		atomicWriteFileSync(target, "new content");
+		assert.equal(fs.readFileSync(target, "utf8"), "new content");
+	});
+
+	it("does not leave temp files on success", () => {
+		const target = path.join(tmpDir, "atomic-clean.txt");
+		atomicWriteFileSync(target, "data");
+		const tmpFiles = fs.readdirSync(tmpDir).filter((f) => f.endsWith(".tmp"));
+		assert.equal(tmpFiles.length, 0, "No temp files should remain");
+	});
+});
+
+// =========================================================================
+// paths.mjs — rotateCheckpoints
+// =========================================================================
+describe("rotateCheckpoints", () => {
+	it("keeps only maxKeep files", () => {
+		const cpDir = CHECKPOINTS_DIR;
+		fs.mkdirSync(cpDir, { recursive: true });
+		// Create 15 checkpoint files
+		for (let i = 0; i < 15; i++) {
+			const ts = `2026-01-${String(i + 1).padStart(2, "0")}T00-00-00`;
+			fs.writeFileSync(
+				path.join(cpDir, `session-${ts}-abc${i}.md`),
+				`checkpoint ${i}`,
+			);
+		}
+		rotateCheckpoints(10);
+		const remaining = fs
+			.readdirSync(cpDir)
+			.filter((f) => f.startsWith("session-") && f.endsWith(".md"));
+		assert.equal(remaining.length, 10, "Should keep only 10 checkpoints");
+		// The newest 10 should remain (highest dates)
+		assert.ok(
+			remaining.some((f) => f.includes("2026-01-15")),
+			"Newest should survive",
+		);
+		assert.ok(
+			!remaining.some((f) => f.includes("2026-01-01")),
+			"Oldest should be deleted",
+		);
+		// Clean up
+		for (const f of remaining) {
+			try {
+				fs.unlinkSync(path.join(cpDir, f));
+			} catch {}
+		}
+	});
+});
+
+// =========================================================================
+// transcript.mjs — large file tiered read fallback
+// =========================================================================
+describe("readTranscriptLines — large file path", () => {
+	it("reads tail of large transcript file", () => {
+		const tp = path.join(tmpDir, "large-transcript.jsonl");
+		// Write a moderately sized file to test readTranscriptLines
+		const lines = [];
+		for (let i = 0; i < 500; i++) {
+			lines.push(
+				JSON.stringify({
+					type: "user",
+					message: { role: "user", content: `message ${i}` },
+				}),
+			);
+		}
+		fs.writeFileSync(tp, lines.join("\n") + "\n");
+		const result = readTranscriptLines(tp);
+		assert.ok(result.length >= 400, `Should read many lines, got ${result.length}`);
+		// Last line should be the most recent message
+		assert.ok(
+			result[result.length - 1].includes("message 499"),
+			"Should include last message",
+		);
 	});
 });

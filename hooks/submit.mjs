@@ -4,12 +4,12 @@
  *
  * Runs on every user message. Handles (in order):
  * 1. Manual compaction commands (/cg:compact, :prune)
- * 2. Warning menu responses (1-4, 0/cancel)
- * 3. Resume detection ("resume" after /clear)
- * 4. Slash command bypass
- * 5. Checkpoint reload after /clear
- * 6. Token usage check + threshold warning
+ * 2. Resume detection ("resume" after /clear)
+ * 3. Slash command bypass
+ * 4. Checkpoint reload after /clear
+ * 5. Token usage check + state file write (consumed by statusline and /cg:stats)
  *
+ * The statusline is the primary UX for context pressure — no blocking or menus.
  * Heavy logic is delegated to lib/checkpoint.mjs and lib/reload-handler.mjs.
  *
  * @module submit-hook
@@ -103,125 +103,16 @@ if (cMode) {
 			additionalContext: `[Context Guardian] Manual compaction complete.\n\n${result.statsBlock}\n\nDisplay the stats box above verbatim. Then tell the user to type /clear to apply the compaction.`,
 		},
 	});
-	try {
-		atomicWriteFileSync(pState.cooldown, JSON.stringify({ ts: Date.now() }));
-	} catch {}
 	process.exit(0);
 }
 
 // ---------------------------------------------------------------------------
-// 2. Warning menu response (user replied 1/2/3/4)
-// ---------------------------------------------------------------------------
-if (fs.existsSync(flags.menu)) {
-	const choice = (prompt || "").trim();
-
-	if (["1", "2", "3", "4"].includes(choice)) {
-		fs.unlinkSync(flags.menu);
-		let originalPrompt = "";
-		try {
-			originalPrompt = fs.readFileSync(flags.prompt, "utf8");
-		} catch (e) {
-			log(`prompt-read-error session=${session_id}: ${e.message}`);
-		}
-
-		log(`menu-reply choice=${choice} session=${session_id}`);
-
-		if (choice === "1") {
-			// Continue — clear warned, set cooldown, replay prompt
-			try {
-				fs.unlinkSync(flags.warned);
-			} catch {}
-			try {
-				atomicWriteFileSync(
-					pState.cooldown,
-					JSON.stringify({ ts: Date.now() }),
-				);
-			} catch {}
-			output({
-				hookSpecificOutput: {
-					hookEventName: "UserPromptSubmit",
-					additionalContext: `The user chose to continue normally.\n\n<original_request>\n${originalPrompt}\n</original_request>\n\nTreat the above <original_request> as if the user just typed it. Respond to it now.`,
-				},
-			});
-		} else if (choice === "2" || choice === "3") {
-			// Smart Compact or Keep Recent
-			const mode = choice === "2" ? "smart" : "recent";
-			let preStats = {};
-			try {
-				preStats = JSON.parse(fs.readFileSync(flags.warned, "utf8"));
-			} catch {}
-
-			const result = performCompaction({
-				mode,
-				transcriptPath: transcript_path,
-				sessionId: session_id,
-				originalPrompt,
-				reloadPath: pState.reload,
-				preStats,
-			});
-
-			if (!result) {
-				log(`compact-empty choice=${choice} session=${session_id}`);
-				try {
-					fs.unlinkSync(flags.warned);
-				} catch {}
-				const alt = choice === "2" ? "3" : "1";
-				const altName =
-					choice === "2" ? "Keep Recent" : "continue without compacting";
-				output({
-					decision: "block",
-					reason: `Context Guardian could not extract meaningful conversation content. Try option ${alt} (${altName}) instead.\n\nYour original message has been saved — reply with ${alt}, or 0 to cancel.`,
-				});
-				fs.writeFileSync(flags.menu, "1");
-				fs.writeFileSync(flags.prompt, originalPrompt || "");
-				process.exit(0);
-			}
-
-			try {
-				fs.unlinkSync(flags.warned);
-			} catch {}
-			output({ decision: "block", reason: result.statsBlock });
-		} else if (choice === "4") {
-			// Clear — wipe everything
-			try {
-				fs.unlinkSync(flags.warned);
-			} catch {}
-			output({
-				decision: "block",
-				reason: `Context cleared. Type /clear to wipe context and start fresh. No checkpoint was saved.`,
-			});
-		}
-
-		// Cooldown for compaction/clear choices
-		if (["2", "3", "4"].includes(choice)) {
-			try {
-				atomicWriteFileSync(
-					pState.cooldown,
-					JSON.stringify({ ts: Date.now() }),
-				);
-			} catch {}
-		}
-		try {
-			fs.unlinkSync(flags.prompt);
-		} catch {}
-	} else {
-		// Invalid choice — re-show menu
-		log(`menu-invalid choice="${choice}" session=${session_id}`);
-		output({
-			decision: "block",
-			reason: `"${choice}" is not a valid option. Please reply with 1, 2, 3, or 4.\n\n  1  Continue\n  2  Smart Compact\n  3  Keep Recent 20\n  4  Clear`,
-		});
-	}
-	process.exit(0);
-}
-
-// ---------------------------------------------------------------------------
-// 3. Resume detection
+// 2. Resume detection
 // ---------------------------------------------------------------------------
 if (handleResume(prompt, session_id, pState, output)) process.exit(0);
 
 // ---------------------------------------------------------------------------
-// 4. Slash command bypass (but write state preview if reload pending)
+// 3. Slash command bypass (but write state preview if reload pending)
 // ---------------------------------------------------------------------------
 const trimmed = (prompt || "").trim().toLowerCase();
 if (trimmed.startsWith("/")) {
@@ -245,7 +136,7 @@ if (trimmed.startsWith("/")) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Reload detection — inject checkpoint after /clear
+// 4. Reload detection — inject checkpoint after /clear
 // ---------------------------------------------------------------------------
 if (
 	handleReload({
@@ -260,7 +151,7 @@ if (
 	process.exit(0);
 
 // ---------------------------------------------------------------------------
-// 6. Token usage check
+// 5. Token usage check — write state for statusline and /cg:stats
 // ---------------------------------------------------------------------------
 if (!transcript_path || !fs.existsSync(transcript_path)) process.exit(0);
 
@@ -276,10 +167,10 @@ const pct = currentTokens / maxTokens;
 const source = realUsage ? "real" : "estimated";
 
 log(
-	`check session=${session_id} tokens=${currentTokens}/${maxTokens} pct=${(pct * 100).toFixed(1)}% threshold=${(threshold * 100).toFixed(0)}% source=${source} warned=${fs.existsSync(flags.warned)}`,
+	`check session=${session_id} tokens=${currentTokens}/${maxTokens} pct=${(pct * 100).toFixed(1)}% threshold=${(threshold * 100).toFixed(0)}% source=${source}`,
 );
 
-// Write state for /cg:stats
+// Write state for statusline and /cg:stats
 const headroom = Math.max(0, Math.round(maxTokens * threshold - currentTokens));
 const pctDisplay = (pct * 100).toFixed(1);
 const thresholdDisplay = Math.round(threshold * 100);
@@ -290,7 +181,7 @@ else if (pct < threshold)
 	recommendation = "Approaching threshold. Consider wrapping up complex tasks.";
 else
 	recommendation =
-		"At threshold. Compaction recommended — the warning menu will trigger on your next message.";
+		"At threshold. Compaction recommended — run /cg:compact or /cg:prune.";
 
 // Read measured baseline overhead from state (captured by stop hook on first response)
 let baselineOverhead = 0;
@@ -335,96 +226,3 @@ try {
 } catch (e) {
 	log(`state-write-error session=${session_id}: ${e.message}`);
 }
-
-// Below threshold — reset warned flag so it can re-fire
-if (pct < threshold) {
-	try {
-		fs.unlinkSync(flags.warned);
-	} catch {}
-
-	// Graduated nudges — soft context hints via additionalContext (no blocking).
-	// One-time per crossing: uses flag files so each level only fires once.
-	const nudge50 = `${flags.dir}/cg-nudge50-${session_id}`;
-	const nudge65 = `${flags.dir}/cg-nudge65-${session_id}`;
-	const pctInt = Math.round(pct * 100);
-	const tokensRemaining = Math.max(
-		0,
-		maxTokens - currentTokens,
-	).toLocaleString();
-
-	if (pct >= 0.65 && !fs.existsSync(nudge65)) {
-		fs.mkdirSync(flags.dir, { recursive: true });
-		fs.writeFileSync(nudge65, "1");
-		log(`nudge-65 session=${session_id} pct=${pctInt}%`);
-		output({
-			hookSpecificOutput: {
-				hookEventName: "UserPromptSubmit",
-				additionalContext: `[Context Guardian] Context window is ${pctInt}% full (~${tokensRemaining} tokens remaining). Consider running /cg:compact soon. Prefer concise responses and avoid unnecessary file reads.`,
-			},
-		});
-		process.exit(0);
-	}
-
-	if (pct >= 0.5 && !fs.existsSync(nudge50)) {
-		fs.mkdirSync(flags.dir, { recursive: true });
-		fs.writeFileSync(nudge50, "1");
-		log(`nudge-50 session=${session_id} pct=${pctInt}%`);
-		output({
-			hookSpecificOutput: {
-				hookEventName: "UserPromptSubmit",
-				additionalContext: `[Context Guardian] Context window is ${pctInt}% full (~${tokensRemaining} tokens remaining). Run /cg:stats for details.`,
-			},
-		});
-		process.exit(0);
-	}
-
-	process.exit(0);
-}
-
-// Cooldown after compaction — don't re-trigger for 2 minutes
-if (fs.existsSync(pState.cooldown)) {
-	try {
-		const cd = JSON.parse(fs.readFileSync(pState.cooldown, "utf8"));
-		if (Date.now() - cd.ts < 2 * 60 * 1000) {
-			log(
-				`cooldown active — skipping threshold (${Math.round((Date.now() - cd.ts) / 1000)}s since compaction)`,
-			);
-			process.exit(0);
-		}
-		fs.unlinkSync(pState.cooldown);
-	} catch {}
-}
-
-// Already warned this session
-if (fs.existsSync(flags.warned)) process.exit(0);
-
-// ---------------------------------------------------------------------------
-// Show warning menu
-// ---------------------------------------------------------------------------
-fs.mkdirSync(flags.dir, { recursive: true });
-fs.writeFileSync(
-	flags.warned,
-	JSON.stringify({ pct, currentTokens, maxTokens, ts: Date.now() }),
-);
-fs.writeFileSync(flags.menu, "1");
-fs.writeFileSync(flags.prompt, prompt || "");
-
-log(
-	`BLOCKED session=${session_id} pct=${(pct * 100).toFixed(1)}% source=${source}`,
-);
-
-const currentPct = Math.round(pct * 100);
-// Reuse `savings` computed at line 281 — avoid duplicate transcript scan
-output({
-	decision: "block",
-	reason: [
-		`Context Guardian — ~${currentPct}% used (~${currentTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens)`,
-		``,
-		`  1  Continue           ~${currentPct}%`,
-		`  2  Smart Compact      ~${currentPct}% → ~${savings.smartPct}%`,
-		`  3  Keep Recent 20     ~${currentPct}% → ~${savings.recentPct}%`,
-		`  4  Clear              ~${currentPct}% → 0%`,
-		``,
-		`Reply with 1, 2, 3, or 4.`,
-	].join("\n"),
-});

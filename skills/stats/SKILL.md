@@ -49,7 +49,7 @@ All values come directly from the JSON — use them as-is. Pre-computed fields: 
 │  Context Guardian Stats
 │
 │  Current usage:   {current_tokens with commas} / {max_tokens with commas} tokens ({pct_display}%)
-│  Threshold:       {threshold_display}% ({threshold_display - pct_display, rounded}% remaining to warning)
+│  Threshold:       {threshold_display}% ({threshold_display - pct_display, rounded}% remaining to alert)
 │  Data source:     {source: "real" → "real counts", "estimated" → "estimated"}
 │
 │  Model:           {model} / {max_tokens with commas} tokens
@@ -64,9 +64,11 @@ All values come directly from the JSON — use them as-is. Pre-computed fields: 
 └─────────────────────────────────────────────────
 ```
 
-## Step 4 — Run diagnostics
+## Step 4 — Run diagnostics (optional)
 
 Run: `node ${CLAUDE_PLUGIN_ROOT}/lib/diagnostics.mjs ${CLAUDE_SESSION_ID} ${CLAUDE_PLUGIN_ROOT} ${CLAUDE_PLUGIN_DATA}`
+
+If the command fails or returns invalid JSON, omit the Health section entirely.
 
 Parse the JSON output. If **all** checks have `ok: true`, append this line inside the box before the closing `└`:
 

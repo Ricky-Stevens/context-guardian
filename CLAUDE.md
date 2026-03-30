@@ -1,6 +1,6 @@
 # Context Guardian
 
-A Claude Code **plugin** — four hooks + six skills + a shared library. Monitors context window usage and intervenes before quality degrades.
+A Claude Code **plugin** — four hooks + six skills + a shared library. Monitors context window usage via a real-time statusline and provides on-demand compaction tools.
 
 ## Critical Rules
 
@@ -12,20 +12,29 @@ A Claude Code **plugin** — four hooks + six skills + a shared library. Monitor
 ### Key Conventions
 - Session flags (`.claude/cg-*`) live in the **project's** `.claude/` dir, not plugin data — they're project-scoped and cleaned by SessionStart.
 - `.context-guardian/` at the project root holds user-visible artifacts (handoffs, checkpoint copies). Project-scoped, gitignored.
-- `${CLAUDE_PLUGIN_DATA}` (fallback `~/.claude/cg/`) holds plugin-internal state (config, session state, reload/resume/cooldown pointers, checkpoints).
+- `${CLAUDE_PLUGIN_DATA}` (fallback `~/.claude/cg/`) holds plugin-internal state (config, session state, reload/resume pointers, checkpoints).
 - The `{hash}` in filenames like `reload-{hash}.json` is a short SHA-256 of the project cwd for multi-project isolation.
 - Skills invoke CLI entry points (`compact-cli.mjs`, `resume-cli.mjs`) via Bash because skills don't fire `UserPromptSubmit`.
 
-## How The Warning Hook Works
+## Statusline — Primary UX
+
+The statusline is CG's main communication channel. It shows real-time context usage in the terminal status bar with threshold-relative color coding:
+- **Green:** well below threshold (`pct < threshold * 0.7`)
+- **Yellow:** approaching threshold (`pct < threshold`)
+- **Bold red:** at/past threshold (`pct >= threshold`) — shows "compaction recommended — /cg:compact"
+
+The session-start hook auto-configures the statusline and **reclaims it** if overwritten by another tool. The diagnostics check flags a missing CG statusline as a failure.
+
+## How The Submit Hook Works
 
 1. Every user message → submit hook reads real token counts from `message.usage` in the transcript JSONL. Falls back to byte estimation only on the very first message.
-2. Model auto-detected from transcript — Opus 4.6+ = 1M, all others = 200K.
-3. If `pct >= threshold` AND `cg-warned` flag absent AND no cooldown active → block with menu (1-4).
-4. If `pct < threshold` → clear warned flag (so it can re-fire later).
-5. `/` messages bypass the hook entirely.
-6. Menu: **1** Continue (replay original prompt, 2-min cooldown), **2** Smart Compact, **3** Keep Recent, **4** Clear.
-7. After compaction (2/3): user types `/clear`, checkpoint auto-restores. `resume` replays original prompt.
-8. Cooldown (2 min) prevents re-trigger. Cleared on `/clear` restore and new sessions.
+2. Writes token state to `state-{sessionId}.json` — consumed by `/cg:stats` and the statusline.
+3. Handles manual compaction (`/cg:compact`, `/cg:prune`) via flag files or direct command detection.
+4. Handles resume detection ("resume" after `/clear`).
+5. Handles checkpoint reload injection after `/clear`.
+6. `/` messages bypass the hook entirely (but write state preview if reload pending).
+
+No blocking, no menus, no cooldowns. The statusline handles all context pressure communication.
 
 ## Compaction Design
 
@@ -81,7 +90,7 @@ Each line is JSON. Types: `user`, `assistant`, `system`, `progress`. User messag
 ## Testing
 
 ```bash
-bun test                        # 493 tests across 16 files
+bun test                        # all tests
 bun test test/handoff.test.mjs  # handoff/resume tests only
 tail -f ~/.claude/logs/cg.log   # watch hook activity
 ```

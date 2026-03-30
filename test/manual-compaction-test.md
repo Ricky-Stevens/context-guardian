@@ -150,7 +150,7 @@ Grep for "COMPACT_MARKER_RE" across all .mjs files
 ```
 In /tmp/cg-coalesce-test.js, change "return { total, tax, final: total + tax }" to "return { total, tax, final: total + tax, currency: 'IDR' }" — Batavia Digital uses Indonesian Rupiah.
 
-Then grep for "cooldown" in the hooks directory.
+Then check the state file for current token counts and recommendations.
 ```
 
 **Message 18:**
@@ -419,6 +419,6 @@ Paste the saved `full-session-checkpoint.md` into a **fresh Claude session** (no
 | User messages never compressed | ALL fictional facts survive (planted in user messages) |
 | Errors always preserved | Any tool errors during the session kept regardless of tier |
 | Estimation accuracy | Stats/compaction/post-restore numbers within ~2% |
-| Graduated nudges | Check logs for nudge-50/nudge-65 during the build-up |
+| Statusline alerts | Statusline turns yellow/red as usage approaches/exceeds threshold |
 | PreCompact safety net | If native /compact is used instead, check logs for precompact-injected |
 | Diagnostics | /cg:stats shows Health line |

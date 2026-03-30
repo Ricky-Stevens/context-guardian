@@ -66,15 +66,11 @@ function runHook(input) {
 	}
 }
 
-function setupMenuFlags(originalPrompt) {
-	fs.writeFileSync(path.join(flagsDir, "cg-menu-test-session-1234"), "1");
+/** Set up manual compact flag file to trigger compaction via the submit hook */
+function setupCompactFlag(mode) {
 	fs.writeFileSync(
-		path.join(flagsDir, "cg-prompt-test-session-1234"),
-		originalPrompt || "my original message",
-	);
-	fs.writeFileSync(
-		path.join(flagsDir, "cg-warned-test-session-1234"),
-		JSON.stringify({ currentTokens: 5000, maxTokens: 200000, ts: Date.now() }),
+		path.join(flagsDir, `cg-compact-test-session-1234`),
+		mode || "smart",
 	);
 }
 
@@ -104,7 +100,6 @@ afterEach(() => {
 // =========================================================================
 describe("checkpoint content integrity", () => {
 	it("smart compact checkpoint contains all user and assistant text", () => {
-		setupMenuFlags("original prompt");
 		writeLine(makeUser("Please refactor the auth module"));
 		writeLine(
 			makeAssistant("I'll refactor the auth module for you.", HIGH_USAGE),
@@ -114,7 +109,8 @@ describe("checkpoint content integrity", () => {
 			makeAssistant("Done, I've added comprehensive unit tests.", HIGH_USAGE),
 		);
 
-		runHook({ prompt: "2" });
+		setupCompactFlag("smart");
+		runHook({ prompt: "go" });
 
 		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
 		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
@@ -140,14 +136,14 @@ describe("checkpoint content integrity", () => {
 	});
 
 	it("keep recent checkpoint contains the correct last N messages", () => {
-		setupMenuFlags("original");
 		// Write 6 exchanges (12 messages)
 		for (let i = 0; i < 6; i++) {
 			writeLine(makeUser(`question number ${i}`));
 			writeLine(makeAssistant(`answer number ${i}`, HIGH_USAGE));
 		}
 
-		runHook({ prompt: "3" }); // Keep Recent 20
+		setupCompactFlag("recent");
+		runHook({ prompt: "go" }); // Keep Recent 20
 
 		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
 		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
@@ -167,7 +163,6 @@ describe("checkpoint content integrity", () => {
 	});
 
 	it("smart compact replaces tool-only responses with placeholder and tracks files", () => {
-		setupMenuFlags();
 		writeLine(makeUser("read the file please"));
 		// Tool-only response (no text block)
 		writeLine({
@@ -198,7 +193,8 @@ describe("checkpoint content integrity", () => {
 			makeAssistant("Fixed! The issue was a null pointer.", HIGH_USAGE),
 		);
 
-		runHook({ prompt: "2" });
+		setupCompactFlag("smart");
+		runHook({ prompt: "go" });
 
 		const reload = JSON.parse(
 			fs.readFileSync(path.join(dataDir, `reload-${cwdH}.json`), "utf8"),
@@ -332,12 +328,11 @@ describe("successive compaction integrity", () => {
 });
 
 // =========================================================================
-// 4. Full round-trip: warning → compact → reload injection
+// 4. Full round-trip: compact → reload injection
 // =========================================================================
 describe("full compaction round-trip", () => {
 	it("compacted context is correctly injected after reload", () => {
-		// Step 1: Set up menu and compact
-		setupMenuFlags("implement the search feature");
+		// Step 1: Manual compact
 		writeLine(makeUser("analyze the codebase structure"));
 		writeLine(
 			makeAssistant(
@@ -353,13 +348,19 @@ describe("full compaction round-trip", () => {
 			),
 		);
 
-		const compactResult = runHook({ prompt: "2" });
-		assert.equal(compactResult.decision, "block");
+		setupCompactFlag("smart");
+		const compactResult = runHook({ prompt: "go" });
+		assert.ok(compactResult.hookSpecificOutput);
+		assert.ok(
+			compactResult.hookSpecificOutput.additionalContext.includes(
+				"Compaction Stats",
+			),
+		);
 
-		// Step 2: Verify reload file has the original prompt
+		// Step 2: Verify reload file
 		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
 		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
-		assert.equal(reload.original_prompt, "implement the search feature");
+		assert.equal(reload.original_prompt, "");
 		assert.equal(reload.mode, "smart");
 
 		// Step 3: Simulate fresh session after /clear — new session_id, new transcript
@@ -375,7 +376,7 @@ describe("full compaction round-trip", () => {
 			session_id: "fresh-session-5678",
 		});
 
-		// Step 4: Verify injection contains the conversation
+		// Step 4: Verify hybrid injection — index + Read instruction
 		assert.ok(injectResult.hookSpecificOutput, "Should inject checkpoint");
 		const ctx = injectResult.hookSpecificOutput.additionalContext;
 		assert.ok(
@@ -383,38 +384,53 @@ describe("full compaction round-trip", () => {
 			"Should have smart compact marker",
 		);
 		assert.ok(
-			ctx.includes("codebase structure"),
-			"Should contain user message",
+			ctx.includes("Read that file"),
+			"Should have Read instruction for full checkpoint",
 		);
+		// The conversation index should contain condensed references to the session
 		assert.ok(
-			ctx.includes("Elasticsearch"),
-			"Should contain assistant message",
+			ctx.includes("Session State") || ctx.includes("Conversation Index"),
+			"Should contain index preamble",
 		);
-		assert.ok(ctx.includes("resume"), "Should mention resume");
 	});
 
-	it("resume replays the original prompt through the full flow", () => {
-		// Step 1: Compact with an original prompt
-		setupMenuFlags("deploy to production");
+	it("manual compact creates reload file for post-clear injection", () => {
+		// Step 1: Compact
 		writeLine(makeUser("check the CI status"));
 		writeLine(makeAssistant("CI is green, all tests pass.", HIGH_USAGE));
 
-		runHook({ prompt: "2" });
+		setupCompactFlag("smart");
+		runHook({ prompt: "go" });
 
-		// Step 2: Simulate reload in fresh session (creates resume file)
+		// Step 2: Verify reload file exists with correct fields
+		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
+		assert.ok(fs.existsSync(reloadFile), "Reload file should exist");
+		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
+		assert.equal(reload.mode, "smart");
+		assert.ok(reload.checkpoint_path, "Should have checkpoint path");
+		assert.ok(fs.existsSync(reload.checkpoint_path), "Checkpoint file should exist");
+
+		// Step 3: Simulate reload in fresh session
 		const freshTranscript = path.join(tmpDir, "fresh2.jsonl");
 		fs.writeFileSync(freshTranscript, `${JSON.stringify(makeUser("hello"))}\n`);
-		runHook({
+		const injectResult = runHook({
 			prompt: "hello",
 			transcript_path: freshTranscript,
 			session_id: "fresh-session-5678",
 		});
 
-		// Step 3: Verify resume file exists with correct prompt
-		const resumeFile = path.join(dataDir, `resume-${cwdH}.json`);
-		assert.ok(fs.existsSync(resumeFile), "Resume file should exist");
-		const resumeData = JSON.parse(fs.readFileSync(resumeFile, "utf8"));
-		assert.equal(resumeData.original_prompt, "deploy to production");
+		// Step 4: Verify hybrid injection — has index + Read instruction
+		assert.ok(injectResult.hookSpecificOutput, "Should inject checkpoint");
+		const ctx = injectResult.hookSpecificOutput.additionalContext;
+		assert.ok(ctx.includes("Read that file"), "Should have Read instruction");
+		assert.ok(
+			ctx.includes(reload.checkpoint_path),
+			"Should include checkpoint path for Read",
+		);
+		assert.ok(
+			ctx.includes("Session State") || ctx.includes("Conversation Index"),
+			"Should contain index content",
+		);
 	});
 });
 

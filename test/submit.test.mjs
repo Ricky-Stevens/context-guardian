@@ -101,19 +101,6 @@ function writeExtractableTranscript() {
 	);
 }
 
-/** Set up warning menu flags as if the user was just shown the warning */
-function setupMenuFlags(originalPrompt) {
-	fs.writeFileSync(path.join(flagsDir, "cg-menu-test-session-1234"), "1");
-	fs.writeFileSync(
-		path.join(flagsDir, "cg-prompt-test-session-1234"),
-		originalPrompt || "my original message",
-	);
-	fs.writeFileSync(
-		path.join(flagsDir, "cg-warned-test-session-1234"),
-		JSON.stringify({ currentTokens: 5000, maxTokens: 200000, ts: Date.now() }),
-	);
-}
-
 beforeEach(() => {
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-submit-"));
 	cwd = path.join(tmpDir, "project");
@@ -148,44 +135,14 @@ describe("slash command bypass", () => {
 });
 
 // =========================================================================
-// Threshold warning
+// Token state writing
 // =========================================================================
-describe("threshold warning", () => {
-	it("shows menu when above threshold", () => {
+describe("token state writing", () => {
+	it("writes state file with correct fields for high usage", () => {
 		writeLine(makeUser("hello"));
 		writeLine(makeAssistant("hi", HIGH_USAGE));
 
-		const result = runHook({ prompt: "do something" });
-		assert.ok(result);
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("Context Guardian"));
-		assert.ok(result.reason.includes("Reply with"));
-	});
-
-	it("does not warn when below threshold", () => {
-		writeLine(makeUser("hi"));
-		writeLine(makeAssistant("hello", LOW_USAGE));
-
-		const result = runHook({ prompt: "do something" });
-		assert.equal(result, null);
-	});
-
-	it("saves original prompt to flag file", () => {
-		writeLine(makeUser("hello"));
-		writeLine(makeAssistant("hi", HIGH_USAGE));
-
-		runHook({ prompt: "my important message" });
-
-		const promptFile = path.join(flagsDir, "cg-prompt-test-session-1234");
-		assert.ok(fs.existsSync(promptFile));
-		assert.equal(fs.readFileSync(promptFile, "utf8"), "my important message");
-	});
-
-	it("writes session-scoped state file with pre-computed fields", () => {
-		writeLine(makeUser("hello"));
-		writeLine(makeAssistant("hi", HIGH_USAGE));
-
-		runHook({ prompt: "test" });
+		runHook({ prompt: "do something" });
 
 		const sf = path.join(dataDir, "state-test-session-1234.json");
 		assert.ok(fs.existsSync(sf));
@@ -195,156 +152,141 @@ describe("threshold warning", () => {
 		assert.equal(typeof state.headroom, "number");
 		assert.equal(typeof state.recommendation, "string");
 		assert.equal(typeof state.threshold, "number");
+		assert.equal(state.source, "real");
 	});
 
-	it("does not re-warn when already warned this session", () => {
+	it("writes state file for low usage", () => {
+		writeLine(makeUser("hi"));
+		writeLine(makeAssistant("hello", LOW_USAGE));
+
+		runHook({ prompt: "do something" });
+
+		const sf = path.join(dataDir, "state-test-session-1234.json");
+		assert.ok(fs.existsSync(sf));
+		const state = JSON.parse(fs.readFileSync(sf, "utf8"));
+		assert.equal(state.current_tokens, 5);
+		assert.ok(state.recommendation.includes("All clear"));
+	});
+
+	it("includes savings estimates in state", () => {
 		writeLine(makeUser("hello"));
 		writeLine(makeAssistant("hi", HIGH_USAGE));
-		// Simulate already warned
+
+		runHook({ prompt: "test" });
+
+		const sf = path.join(dataDir, "state-test-session-1234.json");
+		const state = JSON.parse(fs.readFileSync(sf, "utf8"));
+		assert.ok(state.smart_estimate_pct != null, "smart_estimate_pct should exist");
+		assert.ok(state.recent_estimate_pct != null, "recent_estimate_pct should exist");
+	});
+});
+
+// =========================================================================
+// No blocking — above threshold exits silently
+// =========================================================================
+describe("no blocking above threshold", () => {
+	it("exits silently when above threshold (no warning menu)", () => {
+		writeLine(makeUser("hello"));
+		writeLine(makeAssistant("hi", HIGH_USAGE));
+
+		const result = runHook({ prompt: "do something" });
+		// Should NOT block — just write state and exit
+		assert.equal(result, null);
+	});
+
+	it("does not create any warning flag files", () => {
+		writeLine(makeUser("hello"));
+		writeLine(makeAssistant("hi", HIGH_USAGE));
+
+		runHook({ prompt: "do something" });
+
+		// No warning-related flags should exist
+		const files = fs.readdirSync(flagsDir);
+		const warningFlags = files.filter(
+			(f) =>
+				f.includes("cg-warned") ||
+				f.includes("cg-menu") ||
+				f.includes("cg-prompt"),
+		);
+		assert.equal(warningFlags.length, 0);
+	});
+
+	it("writes recommendation mentioning compaction at threshold", () => {
+		writeLine(makeUser("hello"));
+		writeLine(makeAssistant("hi", HIGH_USAGE));
+
+		runHook({ prompt: "test" });
+
+		const sf = path.join(dataDir, "state-test-session-1234.json");
+		const state = JSON.parse(fs.readFileSync(sf, "utf8"));
+		assert.ok(state.recommendation.includes("Compaction recommended"));
+		assert.ok(state.recommendation.includes("/cg:compact"));
+	});
+});
+
+// =========================================================================
+// No graduated nudges
+// =========================================================================
+describe("no graduated nudges", () => {
+	it("does not inject additionalContext at 50% usage", () => {
+		// Set threshold high so 50% is below it
 		fs.writeFileSync(
-			path.join(flagsDir, "cg-warned-test-session-1234"),
-			JSON.stringify({ ts: Date.now() }),
+			path.join(dataDir, "config.json"),
+			JSON.stringify({ threshold: 0.80, max_tokens: 200000 }),
 		);
+		// 50% usage = 100000 tokens out of 200000
+		const usage = {
+			input_tokens: 100000,
+			cache_creation_input_tokens: 0,
+			cache_read_input_tokens: 0,
+			output_tokens: 10,
+		};
+		writeLine(makeUser("hello"));
+		writeLine(makeAssistant("hi", usage));
 
-		const result = runHook({ prompt: "another message" });
-		assert.equal(result, null); // silently exits
+		const result = runHook({ prompt: "do something" });
+		assert.equal(result, null);
 	});
-});
 
-// =========================================================================
-// Menu response — choice 1 (continue)
-// =========================================================================
-describe("menu response — choice 1 (continue)", () => {
-	it("replays original prompt via additionalContext", () => {
-		setupMenuFlags("my original message");
-		const result = runHook({ prompt: "1" });
-		assert.ok(result.hookSpecificOutput);
-		assert.ok(
-			result.hookSpecificOutput.additionalContext.includes(
-				"my original message",
-			),
+	it("does not inject additionalContext at 65% usage", () => {
+		fs.writeFileSync(
+			path.join(dataDir, "config.json"),
+			JSON.stringify({ threshold: 0.80, max_tokens: 200000 }),
 		);
+		const usage = {
+			input_tokens: 130000,
+			cache_creation_input_tokens: 0,
+			cache_read_input_tokens: 0,
+			output_tokens: 10,
+		};
+		writeLine(makeUser("hello"));
+		writeLine(makeAssistant("hi", usage));
+
+		const result = runHook({ prompt: "do something" });
+		assert.equal(result, null);
 	});
-});
 
-// =========================================================================
-// Menu response — choice 0 (invalid, re-shows menu)
-// =========================================================================
-describe("menu response — choice 0 (invalid)", () => {
-	it("re-shows menu for invalid choice 0", () => {
-		setupMenuFlags("my message");
-		const result = runHook({ prompt: "0" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("not a valid option"));
-	});
-});
-
-// =========================================================================
-// Menu response — choice 2 (smart compact)
-// =========================================================================
-describe("menu response — choice 2 (smart compact)", () => {
-	it("creates checkpoint and reload file on success", () => {
-		setupMenuFlags("original prompt");
-		writeExtractableTranscript();
-
-		const result = runHook({ prompt: "2" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("Compaction Stats"));
-
-		// Reload file should exist
-		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
-		assert.ok(fs.existsSync(reloadFile));
-		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
-		assert.equal(reload.mode, "smart");
-		assert.equal(reload.original_prompt, "original prompt");
-		assert.ok(fs.existsSync(reload.checkpoint_path));
-
-		// Warned flag should be cleaned
-		assert.ok(
-			!fs.existsSync(path.join(flagsDir, "cg-warned-test-session-1234")),
+	it("does not create nudge flag files", () => {
+		fs.writeFileSync(
+			path.join(dataDir, "config.json"),
+			JSON.stringify({ threshold: 0.80, max_tokens: 200000 }),
 		);
-		// Cooldown should be set
-		assert.ok(fs.existsSync(path.join(dataDir, `cooldown-${cwdH}.json`)));
-		// Prompt file should be cleaned (deferred cleanup)
-		assert.ok(
-			!fs.existsSync(path.join(flagsDir, "cg-prompt-test-session-1234")),
+		const usage = {
+			input_tokens: 130000,
+			cache_creation_input_tokens: 0,
+			cache_read_input_tokens: 0,
+			output_tokens: 10,
+		};
+		writeLine(makeUser("hello"));
+		writeLine(makeAssistant("hi", usage));
+
+		runHook({ prompt: "do something" });
+
+		const files = fs.readdirSync(flagsDir);
+		const nudgeFlags = files.filter(
+			(f) => f.includes("nudge50") || f.includes("nudge65"),
 		);
-	});
-
-	it("warns and re-creates menu on empty extraction", () => {
-		setupMenuFlags("my msg");
-		// Empty transcript — no messages at all
-		// (tool-only transcripts now produce placeholders, so we need truly empty)
-		fs.writeFileSync(transcriptPath, "");
-
-		const result = runHook({ prompt: "2" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("could not extract"));
-		assert.ok(fs.existsSync(path.join(flagsDir, "cg-menu-test-session-1234")));
-	});
-});
-
-// =========================================================================
-// Menu response — choice 3 (keep recent)
-// =========================================================================
-describe("menu response — choice 3 (keep recent)", () => {
-	it("creates checkpoint with recent messages", () => {
-		setupMenuFlags("original");
-		writeExtractableTranscript();
-
-		const result = runHook({ prompt: "3" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("Compaction Stats"));
-
-		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
-		assert.ok(fs.existsSync(reloadFile));
-		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
-		assert.equal(reload.mode, "recent");
-		assert.ok(fs.existsSync(reload.checkpoint_path));
-	});
-
-	it("warns on empty extraction", () => {
-		setupMenuFlags("msg");
-		writeLine(makeUser(""));
-
-		const result = runHook({ prompt: "3" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("could not extract"));
-		assert.ok(fs.existsSync(path.join(flagsDir, "cg-menu-test-session-1234")));
-	});
-});
-
-// =========================================================================
-// Menu response — choice 4 (clear)
-// =========================================================================
-describe("menu response — choice 4 (clear)", () => {
-	it("tells user to /clear and sets cooldown", () => {
-		setupMenuFlags();
-		const result = runHook({ prompt: "4" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("/clear"));
-		// Cooldown should be set
-		assert.ok(fs.existsSync(path.join(dataDir, `cooldown-${cwdH}.json`)));
-	});
-});
-
-// =========================================================================
-// Menu response — invalid choice
-// =========================================================================
-describe("menu response — invalid choice", () => {
-	it("re-shows menu for unrecognized input", () => {
-		setupMenuFlags();
-		const result = runHook({ prompt: "banana" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("not a valid option"));
-		assert.ok(result.reason.includes("Continue"));
-	});
-
-	it("re-shows menu for digit 9", () => {
-		setupMenuFlags();
-		const result = runHook({ prompt: "9" });
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("not a valid option"));
+		assert.equal(nudgeFlags.length, 0);
 	});
 });
 
@@ -386,41 +328,6 @@ describe("resume", () => {
 });
 
 // =========================================================================
-// Cooldown
-// =========================================================================
-describe("cooldown", () => {
-	it("suppresses warning during active cooldown", () => {
-		fs.writeFileSync(
-			path.join(dataDir, `cooldown-${cwdH}.json`),
-			JSON.stringify({ ts: Date.now() }),
-		);
-		writeLine(makeUser("hello"));
-		writeLine(makeAssistant("hi", HIGH_USAGE));
-
-		const result = runHook({ prompt: "do work" });
-		assert.equal(result, null);
-	});
-
-	it("cleans up expired cooldown and proceeds to warn", () => {
-		// Cooldown from 5 minutes ago (expired — limit is 2 min)
-		fs.writeFileSync(
-			path.join(dataDir, `cooldown-${cwdH}.json`),
-			JSON.stringify({ ts: Date.now() - 5 * 60 * 1000 }),
-		);
-		writeLine(makeUser("hello"));
-		writeLine(makeAssistant("hi", HIGH_USAGE));
-
-		const result = runHook({ prompt: "do work" });
-		// Should show warning (cooldown expired)
-		assert.ok(result);
-		assert.equal(result.decision, "block");
-		assert.ok(result.reason.includes("Context Guardian"));
-		// Cooldown file should be cleaned
-		assert.ok(!fs.existsSync(path.join(dataDir, `cooldown-${cwdH}.json`)));
-	});
-});
-
-// =========================================================================
 // Reload detection
 // =========================================================================
 describe("reload detection", () => {
@@ -432,7 +339,7 @@ describe("reload detection", () => {
 		);
 		fs.writeFileSync(
 			checkpointPath,
-			"# Context Checkpoint\n\nUser: prior message\n\nAsst: prior response",
+			"## Session State\n\nGoal: fix the auth bug\nFiles modified: login.js\n\n## Conversation Index\n\n[1] User asked to fix auth — resolved by editing login.js\n\n---\n\n[1] User: prior message about auth\n\nAssistant: prior response about the fix",
 		);
 		const reload = {
 			checkpoint_path: checkpointPath,
@@ -458,20 +365,32 @@ describe("reload detection", () => {
 		return reload;
 	}
 
-	it("injects checkpoint into fresh session", () => {
+	it("injects index + Read instruction into fresh session", () => {
 		createReloadFile();
 		// Fresh transcript — no assistant messages
 		writeLine(makeUser("hello after clear"));
 
 		const result = runHook({ prompt: "hello after clear" });
 		assert.ok(result.hookSpecificOutput);
+		const ctx = result.hookSpecificOutput.additionalContext;
+		// Should have the restore marker
+		assert.ok(ctx.includes("[SMART COMPACT"), "Should have restore marker");
+		// Should have conversation index content (not full body)
+		assert.ok(ctx.includes("Conversation Index"), "Should have index");
+		assert.ok(ctx.includes("fix the auth bug"), "Should have index content");
+		// Should have Read instruction with checkpoint path
+		assert.ok(ctx.includes("Read that file"), "Should have Read instruction");
 		assert.ok(
-			result.hookSpecificOutput.additionalContext.includes("[SMART COMPACT"),
+			ctx.includes("test-checkpoint.md"),
+			"Should include checkpoint path",
 		);
+		// Should have resume hint (original_prompt exists)
+		assert.ok(ctx.includes("resume"), "Should mention resume");
+		// Should NOT contain the full chronological body
 		assert.ok(
-			result.hookSpecificOutput.additionalContext.includes("prior message"),
+			!ctx.includes("[1] User: prior message"),
+			"Should NOT contain full body — Read instruction handles that",
 		);
-		assert.ok(result.hookSpecificOutput.additionalContext.includes("resume"));
 	});
 
 	it("creates resume file when original_prompt exists", () => {
@@ -493,9 +412,13 @@ describe("reload detection", () => {
 		const result = runHook({ prompt: "resume" });
 		assert.ok(result.hookSpecificOutput);
 		const ctx = result.hookSpecificOutput.additionalContext;
-		assert.ok(ctx.includes("<original_request>"));
-		assert.ok(ctx.includes("fix the auth bug"));
-		assert.ok(ctx.includes("Respond to it now"));
+		assert.ok(ctx.includes("<original_request>"), "Should have original request");
+		assert.ok(ctx.includes("fix the auth bug"), "Should have the prompt");
+		assert.ok(ctx.includes("Read that file"), "Should have Read instruction");
+		assert.ok(
+			ctx.includes("Respond to the original request"),
+			"Should instruct to respond",
+		);
 	});
 
 	it("uses KEEP RECENT marker for recent mode", () => {
@@ -503,9 +426,9 @@ describe("reload detection", () => {
 		writeLine(makeUser("hello"));
 
 		const result = runHook({ prompt: "hello" });
-		assert.ok(
-			result.hookSpecificOutput.additionalContext.includes("[KEEP RECENT"),
-		);
+		const ctx = result.hookSpecificOutput.additionalContext;
+		assert.ok(ctx.includes("[KEEP RECENT"), "Should have recent marker");
+		assert.ok(ctx.includes("Read that file"), "Should have Read instruction");
 	});
 
 	it("skips injection for same session that created compaction", () => {
@@ -558,10 +481,27 @@ describe("reload detection", () => {
 		writeLine(makeUser("hello"));
 
 		const result = runHook({ prompt: "hello" });
-		assert.ok(
-			result.hookSpecificOutput.additionalContext.includes("Compaction Stats"),
+		const ctx = result.hookSpecificOutput.additionalContext;
+		assert.ok(ctx.includes("Compaction Stats"));
+		assert.ok(ctx.includes("5,000"));
+	});
+
+	it("includes checkpoint file path in Read instruction", () => {
+		createReloadFile();
+		writeLine(makeUser("hello"));
+
+		const result = runHook({ prompt: "hello" });
+		const ctx = result.hookSpecificOutput.additionalContext;
+		// The Read instruction should reference the exact checkpoint path
+		const checkpointPath = path.join(
+			dataDir,
+			"checkpoints",
+			"test-checkpoint.md",
 		);
-		assert.ok(result.hookSpecificOutput.additionalContext.includes("5,000"));
+		assert.ok(
+			ctx.includes(checkpointPath),
+			"Should include full checkpoint path for Read",
+		);
 	});
 });
 
