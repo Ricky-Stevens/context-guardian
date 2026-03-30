@@ -54,8 +54,8 @@ else
 	recommendation =
 		"At threshold. Compaction recommended — run /cg:compact or /cg:prune.";
 
-// Don't overwrite a recent state file with estimated data — the reload handler
-// or submit hook may have written accurate post-compaction counts that we'd clobber.
+// Don't overwrite a recent state file with estimated data — checkpoint writes
+// or the submit hook may have written accurate post-compaction counts that we'd clobber.
 if (source === "estimated") {
 	const sf = stateFile(session_id);
 	try {

@@ -1,6 +1,6 @@
 # Context Guardian
 
-**Automatic context window monitoring and smart compaction for Claude Code.**
+**Automatic context window monitoring and smart compaction for Claude Code. Zero dependencies required.**
 
 Context Guardian (cg) watches your context window usage in real time and intervenes before your conversation degrades. When usage crosses a configurable threshold, it presents a menu with options to compact, trim, or continue - preserving your work and keeping Claude sharp.
 

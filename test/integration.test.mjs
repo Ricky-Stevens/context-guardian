@@ -5,16 +5,16 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { performCompaction } from "../lib/checkpoint.mjs";
 import { extractConversation, extractRecent } from "../lib/transcript.mjs";
 
 const HOOK_PATH = path.resolve("hooks/submit.mjs");
 
-let tmpDir, cwd, dataDir, flagsDir, cwdH, transcriptPath;
+let tmpDir, cwd, dataDir, transcriptPath;
 
 const HIGH_USAGE = {
 	input_tokens: 5000,
@@ -66,21 +66,11 @@ function runHook(input) {
 	}
 }
 
-/** Set up manual compact flag file to trigger compaction via the submit hook */
-function setupCompactFlag(mode) {
-	fs.writeFileSync(
-		path.join(flagsDir, `cg-compact-test-session-1234`),
-		mode || "smart",
-	);
-}
-
 beforeEach(() => {
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-integ-"));
 	cwd = path.join(tmpDir, "project");
 	dataDir = path.join(tmpDir, "data");
-	flagsDir = path.join(cwd, ".claude");
-	cwdH = crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 8);
-	fs.mkdirSync(flagsDir, { recursive: true });
+	fs.mkdirSync(cwd, { recursive: true });
 	fs.mkdirSync(dataDir, { recursive: true });
 	fs.mkdirSync(path.join(dataDir, "checkpoints"), { recursive: true });
 	transcriptPath = path.join(tmpDir, "transcript.jsonl");
@@ -109,12 +99,16 @@ describe("checkpoint content integrity", () => {
 			makeAssistant("Done, I've added comprehensive unit tests.", HIGH_USAGE),
 		);
 
-		setupCompactFlag("smart");
-		runHook({ prompt: "go" });
+		process.env.CLAUDE_PLUGIN_DATA = dataDir;
+		const result = performCompaction({
+			mode: "smart",
+			transcriptPath,
+			sessionId: "test-session-1234",
+		});
 
-		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
-		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
-		const checkpoint = fs.readFileSync(reload.checkpoint_path, "utf8");
+		assert.ok(result, "performCompaction should return a result");
+		assert.ok(result.checkpointPath, "Should have a checkpoint path");
+		const checkpoint = fs.readFileSync(result.checkpointPath, "utf8");
 
 		// Verify ALL user messages are present
 		assert.ok(
@@ -142,12 +136,16 @@ describe("checkpoint content integrity", () => {
 			writeLine(makeAssistant(`answer number ${i}`, HIGH_USAGE));
 		}
 
-		setupCompactFlag("recent");
-		runHook({ prompt: "go" }); // Keep Recent 20
+		process.env.CLAUDE_PLUGIN_DATA = dataDir;
+		const result = performCompaction({
+			mode: "recent",
+			transcriptPath,
+			sessionId: "test-session-1234",
+		});
 
-		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
-		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
-		const checkpoint = fs.readFileSync(reload.checkpoint_path, "utf8");
+		assert.ok(result, "performCompaction should return a result");
+		assert.ok(result.checkpointPath, "Should have a checkpoint path");
+		const checkpoint = fs.readFileSync(result.checkpointPath, "utf8");
 
 		// All 12 messages should be present (20 > 12)
 		for (let i = 0; i < 6; i++) {
@@ -193,13 +191,16 @@ describe("checkpoint content integrity", () => {
 			makeAssistant("Fixed! The issue was a null pointer.", HIGH_USAGE),
 		);
 
-		setupCompactFlag("smart");
-		runHook({ prompt: "go" });
+		process.env.CLAUDE_PLUGIN_DATA = dataDir;
+		const result = performCompaction({
+			mode: "smart",
+			transcriptPath,
+			sessionId: "test-session-1234",
+		});
 
-		const reload = JSON.parse(
-			fs.readFileSync(path.join(dataDir, `reload-${cwdH}.json`), "utf8"),
-		);
-		const checkpoint = fs.readFileSync(reload.checkpoint_path, "utf8");
+		assert.ok(result, "performCompaction should return a result");
+		assert.ok(result.checkpointPath, "Should have a checkpoint path");
+		const checkpoint = fs.readFileSync(result.checkpointPath, "utf8");
 
 		// Text messages preserved
 		assert.ok(checkpoint.includes("read the file please"));
@@ -328,114 +329,7 @@ describe("successive compaction integrity", () => {
 });
 
 // =========================================================================
-// 4. Full round-trip: compact → reload injection
-// =========================================================================
-describe("full compaction round-trip", () => {
-	it("compacted context is correctly injected after reload", () => {
-		// Step 1: Manual compact
-		writeLine(makeUser("analyze the codebase structure"));
-		writeLine(
-			makeAssistant(
-				"The codebase has three main modules: auth, api, and search.",
-				HIGH_USAGE,
-			),
-		);
-		writeLine(makeUser("tell me about the search module"));
-		writeLine(
-			makeAssistant(
-				"The search module uses Elasticsearch and has two endpoints.",
-				HIGH_USAGE,
-			),
-		);
-
-		setupCompactFlag("smart");
-		const compactResult = runHook({ prompt: "go" });
-		assert.ok(compactResult.hookSpecificOutput);
-		assert.ok(
-			compactResult.hookSpecificOutput.additionalContext.includes(
-				"Compaction Stats",
-			),
-		);
-
-		// Step 2: Verify reload file
-		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
-		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
-		assert.equal(reload.original_prompt, "");
-		assert.equal(reload.mode, "smart");
-
-		// Step 3: Simulate fresh session after /clear — new session_id, new transcript
-		const freshTranscript = path.join(tmpDir, "fresh-transcript.jsonl");
-		fs.writeFileSync(
-			freshTranscript,
-			`${JSON.stringify(makeUser("hello after clear"))}\n`,
-		);
-
-		const injectResult = runHook({
-			prompt: "hello after clear",
-			transcript_path: freshTranscript,
-			session_id: "fresh-session-5678",
-		});
-
-		// Step 4: Verify hybrid injection — index + Read instruction
-		assert.ok(injectResult.hookSpecificOutput, "Should inject checkpoint");
-		const ctx = injectResult.hookSpecificOutput.additionalContext;
-		assert.ok(
-			ctx.includes("[SMART COMPACT"),
-			"Should have smart compact marker",
-		);
-		assert.ok(
-			ctx.includes("Read that file"),
-			"Should have Read instruction for full checkpoint",
-		);
-		// The conversation index should contain condensed references to the session
-		assert.ok(
-			ctx.includes("Session State") || ctx.includes("Conversation Index"),
-			"Should contain index preamble",
-		);
-	});
-
-	it("manual compact creates reload file for post-clear injection", () => {
-		// Step 1: Compact
-		writeLine(makeUser("check the CI status"));
-		writeLine(makeAssistant("CI is green, all tests pass.", HIGH_USAGE));
-
-		setupCompactFlag("smart");
-		runHook({ prompt: "go" });
-
-		// Step 2: Verify reload file exists with correct fields
-		const reloadFile = path.join(dataDir, `reload-${cwdH}.json`);
-		assert.ok(fs.existsSync(reloadFile), "Reload file should exist");
-		const reload = JSON.parse(fs.readFileSync(reloadFile, "utf8"));
-		assert.equal(reload.mode, "smart");
-		assert.ok(reload.checkpoint_path, "Should have checkpoint path");
-		assert.ok(fs.existsSync(reload.checkpoint_path), "Checkpoint file should exist");
-
-		// Step 3: Simulate reload in fresh session
-		const freshTranscript = path.join(tmpDir, "fresh2.jsonl");
-		fs.writeFileSync(freshTranscript, `${JSON.stringify(makeUser("hello"))}\n`);
-		const injectResult = runHook({
-			prompt: "hello",
-			transcript_path: freshTranscript,
-			session_id: "fresh-session-5678",
-		});
-
-		// Step 4: Verify hybrid injection — has index + Read instruction
-		assert.ok(injectResult.hookSpecificOutput, "Should inject checkpoint");
-		const ctx = injectResult.hookSpecificOutput.additionalContext;
-		assert.ok(ctx.includes("Read that file"), "Should have Read instruction");
-		assert.ok(
-			ctx.includes(reload.checkpoint_path),
-			"Should include checkpoint path for Read",
-		);
-		assert.ok(
-			ctx.includes("Session State") || ctx.includes("Conversation Index"),
-			"Should contain index content",
-		);
-	});
-});
-
-// =========================================================================
-// 5. State file accuracy — headroom and recommendation must be correct
+// 4. State file accuracy — headroom and recommendation must be correct
 // =========================================================================
 describe("state file accuracy", () => {
 	it("headroom is mathematically correct", () => {
@@ -617,5 +511,72 @@ describe("session isolation", () => {
 		const dataB = JSON.parse(fs.readFileSync(stateB, "utf8"));
 		assert.equal(dataA.session_id, "session-AAA");
 		assert.equal(dataB.session_id, "session-BBB");
+	});
+});
+
+// =========================================================================
+// capCheckpointContent and writeCompactionState — unit coverage
+// =========================================================================
+
+describe("capCheckpointContent", () => {
+	it("returns content unchanged when under limit", async () => {
+		const { capCheckpointContent } = await import("../lib/checkpoint.mjs");
+		const short = "Hello world";
+		assert.equal(capCheckpointContent(short, 200000), short);
+	});
+
+	it("trims content that exceeds the limit", async () => {
+		const { capCheckpointContent } = await import("../lib/checkpoint.mjs");
+		// maxTokens=100 → maxChars = max(50000, 300) = 50000
+		// Need content > 50000 chars
+		const big = "A".repeat(60000);
+		const result = capCheckpointContent(big, 100);
+		assert.ok(result.length < big.length);
+		assert.ok(result.includes("chars trimmed from middle"));
+		assert.ok(result.startsWith("AAAA"));
+		assert.ok(result.endsWith("AAAA"));
+	});
+
+	it("uses default maxTokens when not provided", async () => {
+		const { capCheckpointContent } = await import("../lib/checkpoint.mjs");
+		const content = "X".repeat(100);
+		assert.equal(capCheckpointContent(content), content);
+	});
+});
+
+describe("writeCompactionState", () => {
+	it("writes a state file with correct fields via performCompaction", () => {
+		process.env.CLAUDE_PLUGIN_DATA = dataDir;
+		writeLine(makeUser("test the state write"));
+		writeLine(makeAssistant("Done.", HIGH_USAGE));
+
+		const result = performCompaction({
+			mode: "smart",
+			transcriptPath,
+			sessionId: "test-wcs",
+		});
+		assert.ok(result, "Should produce a result");
+		assert.ok(result.stats.postTokens > 0, "Should have post-token count");
+		assert.ok(result.stats.saved >= 0, "Should compute savings");
+	});
+
+	it("performCompaction reads baseline_overhead from state file", () => {
+		process.env.CLAUDE_PLUGIN_DATA = dataDir;
+		// Write a state file with baseline_overhead before compacting
+		fs.writeFileSync(
+			path.join(dataDir, "state-test-bo.json"),
+			JSON.stringify({ baseline_overhead: 12000 }),
+		);
+		writeLine(makeUser("test baseline overhead"));
+		writeLine(makeAssistant("Done.", HIGH_USAGE));
+
+		const result = performCompaction({
+			mode: "smart",
+			transcriptPath,
+			sessionId: "test-bo",
+		});
+		assert.ok(result, "Should produce a result");
+		// The overhead should factor into post-token calculation
+		assert.ok(result.stats.postTokens > 0);
 	});
 });

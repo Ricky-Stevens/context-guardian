@@ -36,23 +36,9 @@ describe("formatCompactionStats", () => {
 		assert.ok(block.includes("Saved:   unknown"));
 	});
 
-	it("includes resume lines when hasOriginalPrompt is true", () => {
-		const { block } = formatCompactionStats(1000, 10000, "x".repeat(100), {
-			hasOriginalPrompt: true,
-		});
-		assert.ok(block.includes("Type resume"));
-	});
-
-	it("omits resume lines when hasOriginalPrompt is false", () => {
-		const { block } = formatCompactionStats(1000, 10000, "x".repeat(100), {
-			hasOriginalPrompt: false,
-		});
-		assert.ok(!block.includes("Type resume"));
-	});
-
-	it("defaults hasOriginalPrompt to true", () => {
+	it("box does not contain apply instructions (skill adds those)", () => {
 		const { block } = formatCompactionStats(1000, 10000, "x".repeat(100));
-		assert.ok(block.includes("Type resume"));
+		assert.ok(!block.includes("/cg:resume"));
 	});
 
 	it("handles maxTokens = 0 without crashing", () => {
@@ -65,6 +51,6 @@ describe("formatCompactionStats", () => {
 		assert.ok(block.startsWith("┌"));
 		assert.ok(block.includes("└"));
 		assert.ok(block.includes("Compaction Stats"));
-		assert.ok(block.includes("NOT applied yet"));
+		assert.ok(block.includes("Compaction Stats"));
 	});
 });

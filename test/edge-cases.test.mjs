@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,9 +10,7 @@ import {
 	atomicWriteFileSync,
 	CHECKPOINTS_DIR,
 	ensureDataDir,
-	projectStateFiles,
 	rotateCheckpoints,
-	sessionFlags,
 	stateFile,
 } from "../lib/paths.mjs";
 import { getTokenUsage } from "../lib/tokens.mjs";
@@ -51,66 +48,6 @@ describe("submit hook — invalid stdin", () => {
 		} catch (e) {
 			assert.equal(e.status, 0);
 		}
-	});
-});
-
-// =========================================================================
-// submit.mjs — corrupt reload file (lines 526-530)
-// =========================================================================
-describe("submit hook — corrupt reload file", () => {
-	it("cleans up corrupt reload file and continues", () => {
-		const cwd2 = path.join(tmpDir, "project");
-		const dataDir2 = path.join(tmpDir, "data");
-		fs.mkdirSync(path.join(cwd2, ".claude"), { recursive: true });
-		fs.mkdirSync(dataDir2, { recursive: true });
-		const h = crypto
-			.createHash("sha256")
-			.update(cwd2)
-			.digest("hex")
-			.slice(0, 8);
-
-		fs.writeFileSync(path.join(dataDir2, `reload-${h}.json`), "CORRUPT{{{");
-		fs.writeFileSync(
-			path.join(dataDir2, "config.json"),
-			JSON.stringify({ threshold: 0.5 }),
-		);
-
-		const tp = path.join(tmpDir, "transcript.jsonl");
-		fs.appendFileSync(
-			tp,
-			`${JSON.stringify({
-				type: "assistant",
-				message: {
-					role: "assistant",
-					model: "claude-sonnet-4-20250514",
-					content: [{ type: "text", text: "hi" }],
-					usage: {
-						input_tokens: 5,
-						cache_creation_input_tokens: 0,
-						cache_read_input_tokens: 0,
-						output_tokens: 2,
-					},
-				},
-			})}\n`,
-		);
-
-		try {
-			execFileSync("node", [HOOK_PATH], {
-				input: JSON.stringify({
-					session_id: "test-edge",
-					prompt: "hello",
-					transcript_path: tp,
-					cwd: cwd2,
-				}),
-				encoding: "utf8",
-				timeout: 5000,
-				env: { ...process.env, CLAUDE_PLUGIN_DATA: dataDir2 },
-			});
-		} catch (e) {
-			if (e.status !== 0) throw e;
-		}
-
-		assert.ok(!fs.existsSync(path.join(dataDir2, `reload-${h}.json`)));
 	});
 });
 
@@ -382,18 +319,6 @@ describe("paths — fallback branches", () => {
 	it("stateFile handles valid sessionId", () => {
 		const result = stateFile("abc-123");
 		assert.ok(result.includes("state-abc-123.json"));
-	});
-
-	it("projectStateFiles returns paths with cwd hash", () => {
-		const files = projectStateFiles("/some/path");
-		assert.ok(files.reload.includes("reload-"));
-		assert.ok(files.resume.includes("resume-"));
-	});
-
-	it("sessionFlags returns paths with sessionId", () => {
-		const flags = sessionFlags("/some/project", "sess-42");
-		assert.ok(flags.compactMenu.includes("cg-compact-sess-42"));
-		assert.ok(flags.clearReminded.includes("cg-reminded-sess-42"));
 	});
 
 	it("ensureDataDir does not throw", () => {

@@ -7,7 +7,22 @@ allowed-tools: Bash
 
 # Context Guardian — Resume Session
 
-## Step 1: List available files
+The CLI commands below return JSON with a `content` field containing the full session history. The content is already in the JSON output — do NOT re-read the checkpoint or handoff file with the Read tool.
+
+## Step 1: Auto-load check
+
+**Skip this step if `$ARGUMENTS` is non-empty** (e.g. "all", a number, any text). Go directly to Step 2.
+
+If `$ARGUMENTS` is empty, run:
+
+```
+node ${CLAUDE_PLUGIN_ROOT}/lib/resume-cli.mjs auto
+```
+
+If `autoLoaded` is `true`, skip to **Step 4**.
+If `autoLoaded` is `false`, continue to Step 2.
+
+## Step 2: List available files
 
 If `$ARGUMENTS` contains the word "all", append `all` to the command to include checkpoints:
 
@@ -21,36 +36,23 @@ With "all":
 node ${CLAUDE_PLUGIN_ROOT}/lib/resume-cli.mjs list all
 ```
 
-The output is JSON with `files` (array) and `menu` (formatted text).
+If the `files` array is empty, display the `menu` message and stop.
+If files exist, display the `menu` text verbatim. Wait for the user's reply.
 
-If the `files` array is empty, display the `menu` message (which explains no files are available) and stop.
+## Step 3: Load the selected file
 
-If files exist, display the `menu` text verbatim. Do NOT add any extra text after the box — the box already contains instructions. Wait for the user's reply.
-
-## Step 2: Load the selected file
-
-When the user replies with a number, map it to the corresponding file in the `files` array (1-indexed). If they say anything that isn't a valid number (e.g. "nevermind", "skip"), say "No context restored." and stop.
-
-Run:
+Map the user's number to the `files` array (1-indexed). If invalid, say "No context restored." and stop.
 
 ```
 node ${CLAUDE_PLUGIN_ROOT}/lib/resume-cli.mjs load <filepath>
 ```
 
-Where `<filepath>` is the `path` field from the selected file object.
+## Step 4: Apply the context
 
-The output is a JSON string. Parse it. The `content` field contains the full handoff/checkpoint text.
+Tell the user: **Context restored.**
 
-**IMPORTANT:** The `content` field in the JSON response IS the restored context. Do NOT read any files. Do NOT use the Read tool. The content is already in the JSON output — just use it directly.
+Internalize the `content` as a preserved record of the prior conversation. All user decisions, reasoning, code changes, and command outputs are present. File read results were stripped as re-obtainable — you MUST re-read any project file before referencing its contents or making edits.
 
-## Step 3: Apply the context
-
-Tell the user (one line only):
-
-> Context restored from [type]. I have NOT read any files in this session — I'll re-read anything I need before making changes.
-
-Then treat the `content` value from Step 2 as prior session context. Use it to understand what was previously worked on, but re-read any files before editing them.
-
-Do NOT summarise the restored context unless asked. Do NOT read any files to "verify" the restore.
+Do NOT summarise the restored context unless asked.
 
 $ARGUMENTS

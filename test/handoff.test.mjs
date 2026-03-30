@@ -107,7 +107,7 @@ describe("performHandoff via compact-cli", () => {
 
 		assert.equal(result.success, true);
 		assert.ok(result.statsBlock.includes("Session Handoff"));
-		assert.ok(result.statsBlock.includes("/cg:resume"));
+		assert.ok(result.statsBlock.includes("Saved to:"));
 
 		const cgDir = path.join(cwd, ".context-guardian");
 		assert.ok(fs.existsSync(cgDir));
@@ -714,5 +714,135 @@ describe("CG_DIR_NAME", () => {
 	it("exports .context-guardian", async () => {
 		const { CG_DIR_NAME } = await import("../lib/handoff.mjs");
 		assert.equal(CG_DIR_NAME, ".context-guardian");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// performHandoff — direct unit tests for coverage
+// ---------------------------------------------------------------------------
+
+describe("performHandoff direct", () => {
+	it("returns null for missing transcript", async () => {
+		const { performHandoff } = await import("../lib/handoff.mjs");
+		const result = performHandoff({
+			transcriptPath: "/nonexistent/file.jsonl",
+			sessionId: "test",
+		});
+		assert.equal(result, null);
+	});
+
+	it("returns null for empty transcript", async () => {
+		const { performHandoff } = await import("../lib/handoff.mjs");
+		const result = performHandoff({
+			transcriptPath,
+			sessionId: "test",
+		});
+		assert.equal(result, null);
+	});
+
+	it("creates handoff file with label slug", async () => {
+		const { performHandoff } = await import("../lib/handoff.mjs");
+		const origCwd = process.cwd();
+		process.chdir(cwd);
+		process.env.CLAUDE_PLUGIN_DATA = dataDir;
+		writeMinimalTranscript();
+		try {
+			const result = performHandoff({
+				transcriptPath,
+				sessionId: "test-sess",
+				label: "My Test Session!",
+			});
+			assert.ok(result);
+			assert.ok(result.handoffPath.includes("cg-handoff-my-test-session-"));
+			assert.ok(result.statsBlock.includes("Session Handoff"));
+			assert.ok(fs.existsSync(result.handoffPath));
+			const content = fs.readFileSync(result.handoffPath, "utf8");
+			assert.ok(content.includes("# Session Handoff"));
+			assert.ok(content.includes("Label: My Test Session!"));
+		} finally {
+			process.chdir(origCwd);
+		}
+	});
+
+	it("creates handoff file without label", async () => {
+		const { performHandoff } = await import("../lib/handoff.mjs");
+		const origCwd = process.cwd();
+		process.chdir(cwd);
+		process.env.CLAUDE_PLUGIN_DATA = dataDir;
+		writeMinimalTranscript();
+		try {
+			const result = performHandoff({
+				transcriptPath,
+				sessionId: "test-sess",
+			});
+			assert.ok(result);
+			assert.ok(result.handoffPath.includes("cg-handoff-2"));
+			assert.ok(!fs.readFileSync(result.handoffPath, "utf8").includes("Label:"));
+		} finally {
+			process.chdir(origCwd);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// relativeTime — edge cases
+// ---------------------------------------------------------------------------
+
+describe("relativeTime via formatRestoreMenu", () => {
+	it("shows days ago for old files", async () => {
+		const { formatRestoreMenu } = await import("../lib/handoff.mjs");
+		const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+		const menu = formatRestoreMenu(
+			[
+				{
+					path: "/tmp/fake.md",
+					name: "old session",
+					type: "handoff",
+					mtime: threeDaysAgo.getTime(),
+					size: 1000,
+					created: threeDaysAgo.toISOString(),
+				},
+			],
+			{},
+		);
+		assert.ok(menu.includes("3 days ago"));
+	});
+
+	it("shows yesterday for 1 day old", async () => {
+		const { formatRestoreMenu } = await import("../lib/handoff.mjs");
+		const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
+		const menu = formatRestoreMenu(
+			[
+				{
+					path: "/tmp/fake.md",
+					name: "yesterday session",
+					type: "handoff",
+					mtime: yesterday.getTime(),
+					size: 500,
+					created: yesterday.toISOString(),
+				},
+			],
+			{},
+		);
+		assert.ok(menu.includes("yesterday"));
+	});
+
+	it("shows hours ago", async () => {
+		const { formatRestoreMenu } = await import("../lib/handoff.mjs");
+		const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+		const menu = formatRestoreMenu(
+			[
+				{
+					path: "/tmp/fake.md",
+					name: "recent session",
+					type: "handoff",
+					mtime: threeHoursAgo.getTime(),
+					size: 2000,
+					created: threeHoursAgo.toISOString(),
+				},
+			],
+			{},
+		);
+		assert.ok(menu.includes("3 hours ago"));
 	});
 });

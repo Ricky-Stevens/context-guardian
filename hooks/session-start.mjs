@@ -3,11 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { log } from "../lib/logger.mjs";
-import {
-	atomicWriteFileSync,
-	DATA_DIR,
-	projectStateFiles,
-} from "../lib/paths.mjs";
+import { atomicWriteFileSync, DATA_DIR } from "../lib/paths.mjs";
 
 let input;
 try {
@@ -17,42 +13,7 @@ try {
 	process.exit(0);
 }
 
-// Clean up session-scoped flags in the project's .claude/ directory.
-// Only delete flags that are stale (older than 30 minutes) to avoid
-// interfering with other active sessions in the same project.
-// 30 minutes accommodates users who step away mid-menu (coffee, meetings).
-const flagsDir = path.join(input.cwd || process.cwd(), ".claude");
 const STALE_MS = 30 * 60 * 1000;
-if (fs.existsSync(flagsDir)) {
-	const now = Date.now();
-	try {
-		for (const f of fs
-			.readdirSync(flagsDir)
-			.filter((f) => f.startsWith("cg-"))) {
-			const filePath = path.join(flagsDir, f);
-			try {
-				const stat = fs.statSync(filePath);
-				if (now - stat.mtimeMs > STALE_MS) {
-					fs.unlinkSync(filePath);
-				}
-			} catch {}
-		}
-	} catch {}
-}
-
-// Clear stale resume prompt from previous sessions.
-// Only delete if older than STALE_MS — a fresh resume file may have just
-// been created by the reload handler in another session's submit hook.
-const pState = projectStateFiles(input.cwd);
-const now2 = Date.now();
-try {
-	if (
-		fs.existsSync(pState.resume) &&
-		now2 - fs.statSync(pState.resume).mtimeMs > STALE_MS
-	) {
-		fs.unlinkSync(pState.resume);
-	}
-} catch {}
 
 // Clean up stale session-scoped state files (state-*.json) in DATA_DIR.
 // Each session writes its own state file; old ones accumulate.
@@ -159,7 +120,7 @@ if (statuslineReclaimed) {
 			hookSpecificOutput: {
 				hookEventName: "SessionStart",
 				additionalContext:
-					"[Context Guardian] The statusline was reclaimed from another tool. CG uses the statusline to display real-time context usage — it is essential for monitoring context pressure. The change takes effect on your next session.",
+					"[Context Guardian] Statusline reclaimed — another tool had overwritten it. Takes effect next session.",
 			},
 		}),
 	);

@@ -55,7 +55,7 @@ try {
 				"The following is a high-fidelity deterministic extraction of the conversation.",
 				"Tool outputs that can be re-obtained (file reads, search results) have been stripped.",
 				"All user messages, assistant reasoning, code changes, and command outputs are preserved.",
-				"Use this extraction as the primary basis for your compaction summary — preserve its content verbatim where possible.",
+				"Use this extraction as the primary input for your compaction. It is already noise-reduced — prefer keeping its content over re-summarizing.",
 				"",
 				trimmed,
 			].join("\n"),

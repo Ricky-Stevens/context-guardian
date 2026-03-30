@@ -218,7 +218,7 @@ Read lib/stats.mjs and lib/estimate.mjs. What does estimateSavings return?
 
 **Message 29:**
 ```
-Read the CLAUDE.md file in this project. What testing command does it recommend?
+Read lib/statusline.mjs. What color thresholds does it use and what ANSI codes?
 ```
 
 **Message 30:**
@@ -255,7 +255,12 @@ Then:
 /clear
 ```
 
-Send any message (e.g. "hi") to trigger checkpoint restore.
+Then:
+```
+/cg:resume
+```
+
+**Critical check:** Claude MUST run the load-cli Bash command and receive the full checkpoint as a tool result. If it doesn't, the restore failed — score this as a blocking issue.
 
 Then check real usage:
 ```
@@ -269,7 +274,8 @@ Then check real usage:
 ## Phase 3 — Verify (single message after restore)
 
 ```
-Answer ALL of these from your restored context — do NOT read any files or run any commands:
+Answer ALL of these from your restored context. Do NOT re-read any source files
+or run commands — answer from the checkpoint you just read:
 
 FICTIONAL FACTS (planted in cold/warm/hot tiers):
 1. What port does PostgreSQL run on? Who chose Caddy and when?
@@ -320,7 +326,7 @@ QUALITY CHECK:
 | 12 | Diana/Tomás/Priya/user, zephyr9-critical, #zephyr9-war-room after 5 min | 2 | Hot |
 | 13 | max_connections=200, pool_size=20, 940 active, OrderMesh at 40 (batch processing) | 3 | Hot |
 | 14 | IDR (Indonesian Rupiah) | 1 | Warm |
-| 15 | Recalls the ratio value (or correctly says needs re-read) | 1 | Cold |
+| 15 | Correctly says no such value exists in the codebase (it doesn't — this is a trick question) | 1 | Cold |
 | 16 | Describes the edits: price*qty rounding, null-safety, tax 10→13%, Math.ceil, currency IDR, rename function. Some should be coalesced. | 3 | Mixed |
 | 17 | Says file contents stripped, needs re-read | 1 | — |
 | 18 | Says raw grep results stripped | 1 | — |
@@ -419,6 +425,7 @@ Paste the saved `full-session-checkpoint.md` into a **fresh Claude session** (no
 | User messages never compressed | ALL fictional facts survive (planted in user messages) |
 | Errors always preserved | Any tool errors during the session kept regardless of tier |
 | Estimation accuracy | Stats/compaction/post-restore numbers within ~2% |
+| /cg:resume restore | After /clear, /cg:resume loads checkpoint via tool result — BLOCKING if skipped |
 | Statusline alerts | Statusline turns yellow/red as usage approaches/exceeds threshold |
 | PreCompact safety net | If native /compact is used instead, check logs for precompact-injected |
 | Diagnostics | /cg:stats shows Health line |

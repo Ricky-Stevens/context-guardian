@@ -90,6 +90,6 @@ List only the failed checks. Each on its own `│    ✗` line.
 
 ## Output
 
-Output ONLY the box. No extra text, explanation, or commentary.
+Output the box and nothing else. No extra text, explanation, or commentary beyond what the steps above specify.
 
 $ARGUMENTS
