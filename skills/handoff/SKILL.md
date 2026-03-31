@@ -21,9 +21,7 @@ node ${CLAUDE_PLUGIN_ROOT}/lib/compact-cli.mjs handoff ${CLAUDE_SESSION_ID} ${CL
 
 The output is JSON. If `success` is `true`, display the `statsBlock` value verbatim — it is a pre-formatted box. Then on the next line, display exactly:
 
-**To restore in a future session, run `/cg:resume`.**
-
-Do NOT tell the user to `/clear` — handoff files persist across sessions automatically.
+**To restore in a future session, type `/resume cg:{label}` (using the name you gave), or `/resume` to browse all sessions.**
 
 If `success` is `false`, display the `error` value.
 

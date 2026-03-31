@@ -15,7 +15,7 @@ node ${CLAUDE_PLUGIN_ROOT}/lib/compact-cli.mjs smart ${CLAUDE_SESSION_ID} ${CLAU
 
 The output is JSON. If `success` is `true`, display the `statsBlock` value verbatim — it is a pre-formatted box. Then on the next line, display exactly:
 
-**Type `/clear` then `/cg:resume` to apply the compaction.**
+**Type `/resume cg` to restore the compacted session.**
 
 If `success` is `false`, display the `error` value.
 
