@@ -118,15 +118,10 @@ Note usage. Then:
 Note Before/After. Then:
 
 ```
-/clear
+/resume cg
 ```
 
-Then:
-```
-/cg:resume
-```
-
-**Critical check:** Claude MUST run the load-cli Bash command and receive the full checkpoint as a tool result. If it doesn't, the restore failed — stop here.
+**Critical check:** Claude Code should load the synthetic session containing the checkpoint as a real user message. If `/resume cg` doesn't find the session, check `~/.claude/logs/cg.log` for synthetic-session errors.
 
 ```
 /cg:stats
@@ -192,5 +187,5 @@ TOOL WORK:
 | Hot-tier full fidelity | Q8-10 |
 | Edit preservation | Q7, Q11 |
 | Noise stripping | Q12-13 |
-| /cg:resume restore | Phase 2 critical check |
+| /resume cg restore | Phase 2 critical check |
 | Estimation accuracy | Phase 2 stats comparison |

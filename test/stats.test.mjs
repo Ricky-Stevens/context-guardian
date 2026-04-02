@@ -38,7 +38,7 @@ describe("formatCompactionStats", () => {
 
 	it("box does not contain apply instructions (skill adds those)", () => {
 		const { block } = formatCompactionStats(1000, 10000, "x".repeat(100));
-		assert.ok(!block.includes("/cg:resume"));
+		assert.ok(!block.includes("/resume"));
 	});
 
 	it("handles maxTokens = 0 without crashing", () => {

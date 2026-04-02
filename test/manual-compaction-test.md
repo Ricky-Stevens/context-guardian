@@ -189,7 +189,7 @@ In /tmp/cg-coalesce-test.js, change "const tax = total * 0.13" to "const tax = M
 
 **Message 24:**
 ```
-Read lib/reload-handler.mjs. Briefly explain what happens when a user types /clear after a CG compaction.
+Read lib/synthetic-session.mjs. Briefly explain how CG creates synthetic sessions for /resume.
 ```
 
 **Message 25:**
@@ -252,15 +252,10 @@ Note the "Before" and "After" sizes from the stats output.
 
 Then:
 ```
-/clear
+/resume cg
 ```
 
-Then:
-```
-/cg:resume
-```
-
-**Critical check:** Claude MUST run the load-cli Bash command and receive the full checkpoint as a tool result. If it doesn't, the restore failed — score this as a blocking issue.
+**Critical check:** Claude Code should load the synthetic session containing the checkpoint as a real user message. If `/resume cg` doesn't find the session, check `~/.claude/logs/cg.log` for synthetic-session errors — score this as a blocking issue.
 
 Then check real usage:
 ```
@@ -425,7 +420,7 @@ Paste the saved `full-session-checkpoint.md` into a **fresh Claude session** (no
 | User messages never compressed | ALL fictional facts survive (planted in user messages) |
 | Errors always preserved | Any tool errors during the session kept regardless of tier |
 | Estimation accuracy | Stats/compaction/post-restore numbers within ~2% |
-| /cg:resume restore | After /clear, /cg:resume loads checkpoint via tool result — BLOCKING if skipped |
+| /resume cg restore | After compaction, /resume cg loads checkpoint as real user message — BLOCKING if skipped |
 | Statusline alerts | Statusline turns yellow/red as usage approaches/exceeds threshold |
 | PreCompact safety net | If native /compact is used instead, check logs for precompact-injected |
 | Diagnostics | /cg:stats shows Health line |

@@ -65,14 +65,6 @@ function runCli(args, opts = {}) {
 	});
 }
 
-function runResumeCli(args, opts = {}) {
-	return execFileSync("node", [path.resolve("lib/resume-cli.mjs"), ...args], {
-		encoding: "utf8",
-		timeout: 5000,
-		cwd: opts.cwd || cwd,
-	});
-}
-
 function writeStateFile(sessionId, data) {
 	fs.writeFileSync(
 		path.join(dataDir, `state-${sessionId}.json`),
@@ -526,109 +518,6 @@ describe("formatRestoreMenu", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// resume-cli
-// ---------------------------------------------------------------------------
-
-describe("resume-cli", () => {
-	it("list returns empty when no .context-guardian/", () => {
-		const result = JSON.parse(runResumeCli(["list"]));
-		assert.equal(result.success, true);
-		assert.equal(result.files.length, 0);
-		assert.ok(result.menu.includes("No saved sessions"));
-	});
-
-	it("list finds handoff files in .context-guardian/", () => {
-		const cgDir = path.join(cwd, ".context-guardian");
-		fs.mkdirSync(cgDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(cgDir, "cg-handoff-2026-03-29T10-00-00.md"),
-			"# Session Handoff\n> Created: 2026-03-29T10:00:00Z\n\n## Session State\nGoal: test goal\n",
-		);
-
-		const result = JSON.parse(runResumeCli(["list"]));
-		assert.equal(result.success, true);
-		assert.equal(result.files.length, 1);
-		assert.equal(result.files[0].type, "handoff");
-	});
-
-	it("list excludes checkpoints without all flag", () => {
-		const cgDir = path.join(cwd, ".context-guardian");
-		fs.mkdirSync(cgDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(cgDir, "cg-checkpoint-2026-03-29T10-00-00-abcd.md"),
-			"# Context Checkpoint\n> Created: 2026-03-29T10:00:00Z\n",
-		);
-
-		const result = JSON.parse(runResumeCli(["list"]));
-		assert.equal(result.files.length, 0);
-	});
-
-	it("list includes checkpoints with all flag", () => {
-		const cgDir = path.join(cwd, ".context-guardian");
-		fs.mkdirSync(cgDir, { recursive: true });
-		fs.writeFileSync(
-			path.join(cgDir, "cg-checkpoint-2026-03-29T10-00-00-abcd.md"),
-			"# Context Checkpoint\n> Created: 2026-03-29T10:00:00Z\n",
-		);
-
-		const result = JSON.parse(runResumeCli(["list", "all"]));
-		assert.equal(result.files.length, 1);
-		assert.equal(result.files[0].type, "checkpoint");
-		// showType should be true when all is used
-		assert.ok(result.menu.includes("[CHECKPOINT]"));
-	});
-
-	it("load returns file content", () => {
-		const cgDir = path.join(cwd, ".context-guardian");
-		fs.mkdirSync(cgDir, { recursive: true });
-		const filePath = path.join(cgDir, "cg-handoff-2026-03-29T10-00-00.md");
-		fs.writeFileSync(filePath, "# Session Handoff\ntest content");
-
-		const result = JSON.parse(runResumeCli(["load", filePath]));
-		assert.equal(result.success, true);
-		assert.equal(result.type, "handoff");
-		assert.ok(result.content.includes("test content"));
-	});
-
-	it("load identifies checkpoint type", () => {
-		const cgDir = path.join(cwd, ".context-guardian");
-		fs.mkdirSync(cgDir, { recursive: true });
-		const filePath = path.join(cgDir, "cg-checkpoint-2026-03-29T10-00-00.md");
-		fs.writeFileSync(filePath, "# Context Checkpoint\ncheckpoint content");
-
-		const result = JSON.parse(runResumeCli(["load", filePath]));
-		assert.equal(result.success, true);
-		assert.equal(result.type, "checkpoint");
-	});
-
-	it("load returns error for missing file", () => {
-		const result = JSON.parse(
-			runResumeCli(["load", path.join(cwd, ".context-guardian", "nope.md")]),
-		);
-		assert.equal(result.success, false);
-	});
-
-	it("load rejects paths outside .context-guardian/", () => {
-		// Create a file outside .context-guardian
-		const outsidePath = path.join(cwd, "secret.txt");
-		fs.writeFileSync(outsidePath, "secret data");
-
-		const result = JSON.parse(runResumeCli(["load", outsidePath]));
-		assert.equal(result.success, false);
-	});
-
-	it("returns error for unknown action", () => {
-		const result = JSON.parse(runResumeCli(["unknown"]));
-		assert.equal(result.success, false);
-		assert.ok(result.error.includes("Usage"));
-	});
-
-	it("returns error for no action", () => {
-		const result = JSON.parse(runResumeCli([]));
-		assert.equal(result.success, false);
-	});
-});
 
 // ---------------------------------------------------------------------------
 // rotateFiles

@@ -1,6 +1,6 @@
 # Context Guardian
 
-A Claude Code **plugin** — four hooks + six skills + a shared library. Monitors context window usage via a real-time statusline and provides on-demand compaction tools.
+A Claude Code **plugin** — four hooks + five skills + a shared library. Monitors context window usage via a real-time statusline and provides on-demand compaction tools.
 
 ## Critical Rules
 
@@ -12,9 +12,9 @@ A Claude Code **plugin** — four hooks + six skills + a shared library. Monitor
 ### Key Conventions
 - Session flags (`.claude/cg-*`) live in the **project's** `.claude/` dir, not plugin data — they're project-scoped and cleaned by SessionStart.
 - `.context-guardian/` at the project root holds user-visible artifacts (handoffs, checkpoint copies). Project-scoped, gitignored.
-- `${CLAUDE_PLUGIN_DATA}` (fallback `~/.claude/cg/`) holds plugin-internal state (config, session state, reload/resume pointers, checkpoints).
-- The `{hash}` in filenames like `reload-{hash}.json` is a short SHA-256 of the project cwd for multi-project isolation.
-- Skills invoke CLI entry points (`compact-cli.mjs`, `resume-cli.mjs`) via Bash because skills don't fire `UserPromptSubmit`.
+- `${CLAUDE_PLUGIN_DATA}` (fallback `~/.claude/cg/`) holds plugin-internal state (config, session state, checkpoints, synthetic session manifest).
+- Skills invoke CLI entry points (`compact-cli.mjs`) via Bash because skills don't fire `UserPromptSubmit`.
+- Compaction and handoff automatically create synthetic JSONL sessions so `/resume cg` or `/resume cg:{label}` loads checkpoints as real conversation messages.
 
 ## Statusline — Primary UX
 
@@ -30,9 +30,7 @@ The session-start hook auto-configures the statusline and **reclaims it** if ove
 1. Every user message → submit hook reads real token counts from `message.usage` in the transcript JSONL. Falls back to byte estimation only on the very first message.
 2. Writes token state to `state-{sessionId}.json` — consumed by `/cg:stats` and the statusline.
 3. Handles manual compaction (`/cg:compact`, `/cg:prune`) via flag files or direct command detection.
-4. Handles resume detection ("resume" after `/clear`).
-5. Handles checkpoint reload injection after `/clear`.
-6. `/` messages bypass the hook entirely (but write state preview if reload pending).
+4. `/` messages bypass the hook entirely.
 
 No blocking, no menus, no cooldowns. The statusline handles all context pressure communication.
 
@@ -65,17 +63,16 @@ Never chop at a point. Start+end trim: keep first N chars (intent) + last N char
 - Smart Compact: all messages after last compaction boundary, with tiered compression and edit coalescing
 - Keep Recent: last 10 user exchanges (grouped with responses), same extraction engine
 
-### Checkpoint injection framing
-After `/clear`, injected as `additionalContext` with framing: "preserved record, NOT a summary, re-obtainable noise stripped, all decisions preserved." Includes re-read guardrail.
-
 ## Session Handoff & Resume
 
 - `/cg:handoff [name]` → extracts conversation (same as Smart Compact), writes to `.context-guardian/cg-handoff-{slug}-{datetime}.md`
-- `/cg:resume` → scans `.context-guardian/` for handoffs, shows numbered menu. `/cg:resume all` includes checkpoints too.
-- Opt-in restore — new sessions start fresh unless user runs `/cg:resume`
-- Compaction checkpoints are also copied to `.context-guardian/cg-checkpoint-*.md` for visibility
+- Both `/cg:compact` and `/cg:handoff` automatically create synthetic JSONL sessions in Claude Code's session directory
+- User restores via native `/resume cg` (for compaction) or `/resume cg:{label}` (for handoff)
+- No custom resume skill — leverages Claude Code's built-in `/resume` which calls `setMessages()` to replace the conversation
+- The synthetic session contains the checkpoint as a real user message (not `additionalContext`), giving higher attention fidelity
+- A manifest (`synthetic-sessions.json` in plugin data dir) tracks one synthetic session per title, cleaning up the previous one on each write
+- Compaction checkpoints are also copied to `.context-guardian/cg-checkpoint-*.md` for user visibility
 - `rotateFiles` sorts by mtime (not filename) because label-prefixed filenames break alphabetical chronological ordering
-- `resume-cli.mjs load` validates path is within `.context-guardian/` (path traversal guard)
 
 ## Token Counting
 

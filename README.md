@@ -2,7 +2,7 @@
 
 **Automatic context window monitoring and smart compaction for Claude Code. Zero dependencies required.**
 
-Context Guardian (cg) watches your context window usage in real time and intervenes before your conversation degrades. When usage crosses a configurable threshold, it presents a menu with options to compact, trim, or continue - preserving your work and keeping Claude sharp.
+Context Guardian (cg) watches your context window usage in real time via a statusline and provides on-demand compaction tools. When usage crosses a configurable threshold, the statusline turns red and recommends compaction — preserving your work and keeping Claude sharp.
 
 Distributed as a **Claude Code plugin** - it's called "cg" due to a quirk of how Claude Code does skills. `/cg:stats` is easier to type than `/context-guardian:stats`.
 
@@ -42,7 +42,7 @@ claude --plugin-dir /path/to/cg
 
 ## Commands
 
-Context Guardian adds six slash commands:
+Context Guardian adds five slash commands:
 
 ### `/cg:stats`
 
@@ -61,7 +61,6 @@ Context Guardian adds six slash commands:
 │  /cg:prune           ~37.2% → ~3%
 │
 │  /cg:handoff [name]  save session for later
-│  /cg:resume          restore a previous session
 │
 └─────────────────────────────────────────────────
 ```
@@ -96,26 +95,11 @@ Save your current session context for later. Uses the same deterministic extract
 
 Handoff files are saved to `.context-guardian/` in your project root. It is recommended to .gitignore this folder.
 
-### `/cg:resume`
-
-Restore context from a previous session. Shows a menu of available handoffs:
-
-```
-┌──────────────────────────────────────────────────────────────────────────
-│  Previous Sessions
-├──────────────────────────────────────────────────────────────────────────
-│  [1]  my auth refactor (3 hours ago · 42KB)
-│  [2]  implement fibonacci (yesterday · 18KB)
-│
-│  Reply with a number to restore, or continue to start a new session.
-└──────────────────────────────────────────────────────────────────────────
-```
-
-Pick a number to restore that session's context, or just keep working for a fresh start.
+To restore a handoff in a future session, use Claude Code's built-in `/resume` command:
 
 ```bash
-/cg:resume       # show handoffs only
-/cg:resume all   # also show compaction checkpoints
+/resume cg:my-auth-refactor   # restore a specific handoff by label
+/resume                       # browse all sessions including CG handoffs
 ```
 
 ---
@@ -216,41 +200,15 @@ Context Guardian reads **actual token counts** from Claude Code's transcript. Ev
 These are the real values from the Anthropic API - the same numbers that determine your bill. On the first message of a session (before any assistant response exists), the plugin falls back to a byte-based estimate until real data is available.
 
 
-### Why /clear? (Technical Explanation)
+### How Restore Works
 
-After compaction, you type `/clear` to apply it. Here's why the plugin can't do this automatically:
+After compaction or handoff, Context Guardian writes a **synthetic JSONL session** to Claude Code's session directory. This session contains the checkpoint as a real user message with a custom title (e.g., "cg" or "cg:my-feature").
 
-**Claude Code hooks run in isolated subprocesses.** They receive input via stdin and return output via stdout. A hook can:
-- Block a message (`decision: "block"`)
-- Inject context (`additionalContext`)
-- Exit silently (pass-through)
+When you type `/resume cg`, Claude Code's native resume mechanism finds and loads this synthetic session, replacing the current conversation with the checkpoint content. Because it's a real user message (not injected context), the model gives it full attention.
 
-A hook **cannot**:
-- Execute slash commands (`/clear`, `/compact`)
-- Directly modify Claude's conversation state
-- Invoke skills or other plugin components
-- Interact with Claude Code's UI
-
-This is a security boundary - hooks are sandboxed. They can influence the conversation through the defined interface, but they can't take arbitrary actions inside Claude Code.
-
-### The Resume Flow
-
-After compaction, the full flow is:
-
-1. **Pick option 2 or 3** → stats shown, checkpoint saved
-2. **Type `/clear`** → conversation wiped, checkpoint auto-restores on next message
-3. **Type `resume`** → your original prompt (the one that triggered the warning) replays automatically
-
-If you type `resume` immediately after `/clear`, the plugin handles both the checkpoint restore and prompt replay in a single step - no double-prompting.
-
-### Cooldown
-
-After any compaction or "Continue" choice, Context Guardian enters a **2-minute cooldown** where the warning won't re-trigger. This prevents loops where the injected checkpoint itself exceeds the threshold (common with very low thresholds during testing).
-
-The cooldown is cleared by:
-- `/clear` + checkpoint restore (fresh start)
-- New session (SessionStart hook)
-- Expiry (2 minutes)
+The flow is:
+1. Run `/cg:compact` or `/cg:handoff [name]` → checkpoint saved + synthetic session created
+2. Type `/resume cg` (or `/resume cg:{label}` for handoffs) → context restored
 
 ---
 
@@ -260,7 +218,7 @@ The cooldown is cleared by:
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `submit.mjs` | `UserPromptSubmit` | Main logic - monitors usage, shows menu, handles compaction, resume, cooldown |
+| `submit.mjs` | `UserPromptSubmit` | Main logic - monitors usage, writes token state, handles manual compaction |
 | `session-start.mjs` | `SessionStart` | Cleans up session flags, auto-configures statusline, self-healing marketplace clone |
 | `stop.mjs` | `Stop` | Writes fresh token state after each assistant response. Captures baseline overhead on first response. |
 | `precompact.mjs` | `PreCompact` | Injects CG's extraction as additional context into Claude Code's native `/compact` |
@@ -304,21 +262,17 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 |------|---------|
 | `config.json` | Threshold and max_tokens override |
 | `state-{session_id}.json` | Latest token counts, model, transcript path (session-scoped) |
-| `reload-{hash}.json` | Triggers checkpoint injection after `/clear` (project-scoped) |
-| `resume-{hash}.json` | Stores original prompt for `resume` replay (project-scoped) |
-| `cooldown-{hash}.json` | Prevents warning re-trigger for 2 minutes (project-scoped) |
 | `checkpoints/` | Saved compaction checkpoints (markdown) |
+| `synthetic-sessions.json` | Manifest tracking synthetic JSONL sessions for `/resume` |
 
 Additionally, each project has a `.context-guardian/` directory at its root containing:
 
 | File | Purpose |
 |------|---------|
 | `cg-handoff-[name]-{datetime}.md` | Session handoff files (from `/cg:handoff`) |
-| `cg-checkpoint-{datetime}.md` | Copies of compaction checkpoints (for `/cg:resume all`) |
+| `cg-checkpoint-{datetime}.md` | Copies of compaction checkpoints for visibility |
 
 These files are project-scoped — each project gets its own isolated set. Add `.context-guardian/` to your `.gitignore`.
-
-The `{hash}` suffix is a short SHA-256 of the project directory, ensuring multiple simultaneous sessions in different projects don't interfere.
 
 ---
 
@@ -330,32 +284,23 @@ All hook activity logs to `~/.claude/logs/cg.log`:
 tail -f ~/.claude/logs/cg.log
 ```
 
-Log entries include token counts, threshold checks, menu interactions, checkpoint creation with compression stats, resume/reload events, and cooldown activity.
+Log entries include token counts, threshold checks, checkpoint creation with compression stats, synthetic session writes, and handoff activity.
 
 ---
 
 ## Troubleshooting
 
-**Menu doesn't appear:**
-- Check your threshold: `/cg:config`
-- Check logs: `tail -20 ~/.claude/logs/cg.log`
-- Verify plugin is loaded: `/plugins`
-
-**"resume" doesn't work:**
-- Expires after 10 minutes. If too much time passed, retype your message.
-- If you start a new session without `/clear`, the resume state is cleared.
-
 **Token counts show "estimated":**
 - Only happens on the first message of a session. After one exchange, counts become real.
 
-**Warning fires immediately after compaction:**
-- This shouldn't happen (2-minute cooldown). If it does, check if cooldown.json exists in the plugin data directory.
-
-**Slash commands get blocked by the warning:**
-- This shouldn't happen. All messages starting with `/` bypass the hook entirely.
+**`/resume cg` doesn't find the session:**
+- Ensure you ran `/cg:compact` or `/cg:handoff` first — these create the synthetic session.
+- Check logs: `tail -20 ~/.claude/logs/cg.log`
 
 **Plugin not loading:**
 - Ensure Claude Code v1.0.33+ (plugin system requirement)
+- Check logs: `tail -20 ~/.claude/logs/cg.log`
+- Verify plugin is loaded: `/plugins`
 - Try: `/plugin uninstall cg` then `/plugin install cg`
 
 ---
