@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import fs from "node:fs";
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { describe, it } from "node:test";
 
 const scriptPath = path.resolve(import.meta.dirname, "../lib/statusline.mjs");
 
@@ -31,101 +32,96 @@ function runWithThreshold(input, threshold) {
 }
 
 describe("statusline render", () => {
-	test("empty object shows '--'", () => {
+	it("empty object shows '--'", () => {
 		const out = runStatusline({});
-		expect(out).toContain("Context usage: --");
+		assert.ok(out.includes("Context usage: --"));
 	});
 
-	test("empty context_window shows '--'", () => {
+	it("empty context_window shows '--'", () => {
 		const out = runStatusline({ context_window: {} });
-		expect(out).toContain("Context usage: --");
+		assert.ok(out.includes("Context usage: --"));
 	});
 
-	test("null used_percentage shows '--'", () => {
+	it("null used_percentage shows '--'", () => {
 		const out = runStatusline({ context_window: { used_percentage: null } });
-		expect(out).toContain("Context usage: --");
+		assert.ok(out.includes("Context usage: --"));
 	});
 
-	test("0% is valid, not '--'", () => {
+	it("0% is valid, not '--'", () => {
 		const out = runStatusline({ context_window: { used_percentage: 0 } });
-		expect(out).toContain("Context usage: 0%");
-		expect(out).not.toContain("--");
+		assert.ok(out.includes("Context usage: 0%"));
+		assert.ok(!out.includes("--"));
 	});
 
-	test("3% shows percentage and remaining until alert", () => {
+	it("3% shows percentage and remaining until alert", () => {
 		const out = runStatusline({ context_window: { used_percentage: 3 } });
-		expect(out).toContain("Context usage: 3%");
-		expect(out).toContain("32% remaining until alert");
+		assert.ok(out.includes("Context usage: 3%"));
+		assert.ok(out.includes("32% remaining until alert"));
 	});
 
-	test("invalid JSON input falls back to 'Context: --'", () => {
+	it("invalid JSON input falls back to 'Context: --'", () => {
 		const out = runStatusline("not valid json {{{");
-		expect(out).toBe("Context: --");
+		assert.equal(out, "Context: --");
 	});
 
-	test("output contains /cg:stats for more", () => {
+	it("output contains /cg:stats for more", () => {
 		const out = runStatusline({ context_window: { used_percentage: 10 } });
-		expect(out).toContain("/cg:stats for more");
+		assert.ok(out.includes("/cg:stats for more"));
 	});
 });
 
 describe("threshold-relative colors", () => {
-	test("well below threshold shows green", () => {
-		// Default threshold 35%, pct 10% → 10 < 35*0.7=24.5 → green
+	it("well below threshold shows green", () => {
 		const out = runStatusline({ context_window: { used_percentage: 10 } });
-		expect(out).toContain("\x1b[32m"); // green
+		assert.ok(out.includes("\x1b[32m")); // green
 	});
 
-	test("approaching threshold shows yellow", () => {
-		// Default threshold 35%, pct 30% → 30 >= 24.5 && 30 < 35 → yellow
+	it("approaching threshold shows yellow", () => {
 		const out = runStatusline({ context_window: { used_percentage: 30 } });
-		expect(out).toContain("\x1b[33m"); // yellow
+		assert.ok(out.includes("\x1b[33m")); // yellow
 	});
 
-	test("at threshold shows bold red", () => {
-		// Default threshold 35%, pct 40% → 40 >= 35 → bold red
+	it("at threshold shows bold red", () => {
 		const out = runStatusline({ context_window: { used_percentage: 40 } });
-		expect(out).toContain("\x1b[1;31m"); // bold red
+		assert.ok(out.includes("\x1b[1;31m")); // bold red
 	});
 
-	test("colors adjust with custom threshold", () => {
-		// threshold 0.70 → green < 49%, yellow 49-70%, red >= 70%
+	it("colors adjust with custom threshold", () => {
 		const greenOut = runWithThreshold(
 			{ context_window: { used_percentage: 20 } },
 			0.7,
 		);
-		expect(greenOut).toContain("\x1b[32m");
+		assert.ok(greenOut.includes("\x1b[32m"));
 
 		const yellowOut = runWithThreshold(
 			{ context_window: { used_percentage: 55 } },
 			0.7,
 		);
-		expect(yellowOut).toContain("\x1b[33m");
+		assert.ok(yellowOut.includes("\x1b[33m"));
 
 		const redOut = runWithThreshold(
 			{ context_window: { used_percentage: 75 } },
 			0.7,
 		);
-		expect(redOut).toContain("\x1b[1;31m");
+		assert.ok(redOut.includes("\x1b[1;31m"));
 	});
 });
 
 describe("alert state messaging", () => {
-	test("at threshold shows actionable compaction message", () => {
+	it("at threshold shows actionable compaction message", () => {
 		const out = runStatusline({ context_window: { used_percentage: 40 } });
-		expect(out).toContain("compaction recommended");
-		expect(out).toContain("/cg:compact");
+		assert.ok(out.includes("compaction recommended"));
+		assert.ok(out.includes("/cg:compact"));
 	});
 
-	test("at threshold uses bold red for alert text", () => {
+	it("at threshold uses bold red for alert text", () => {
 		const out = runStatusline({ context_window: { used_percentage: 40 } });
-		// Alert string itself should use bold red
-		expect(out).toContain("\x1b[1;31m| compaction recommended");
+		assert.ok(out.includes("\x1b[1;31m| compaction recommended"));
 	});
 
-	test("below threshold shows remaining until alert", () => {
+	it("below threshold shows remaining until alert", () => {
 		const out = runStatusline({ context_window: { used_percentage: 10 } });
-		expect(out).toContain("remaining until alert");
-		expect(out).not.toContain("compaction recommended");
+		assert.ok(out.includes("remaining until alert"));
+		assert.ok(!out.includes("compaction recommended"));
 	});
 });

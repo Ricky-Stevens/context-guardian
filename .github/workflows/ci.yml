@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,8 +44,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      # Run only the node:test files (skip bun:test files)
-      - run: node --test test/submit.test.mjs test/integration.test.mjs test/edge-cases.test.mjs test/transcript.test.mjs test/extract-helpers.test.mjs test/compaction-e2e.test.mjs test/trim.test.mjs test/tool-summary.test.mjs test/tokens.test.mjs test/handoff.test.mjs
+      - run: node --test test/*.test.mjs
 
   sonarcloud:
     name: SonarCloud Analysis
@@ -59,6 +58,6 @@ jobs:
         with:
           name: coverage
           path: coverage
-      - uses: SonarSource/sonarqube-scan-action@v5
+      - uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
