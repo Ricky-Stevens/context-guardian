@@ -1,5 +1,12 @@
 # Context Guardian
 
+[![CI](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+
 **Automatic context window monitoring and smart compaction for Claude Code. Zero dependencies required.**
 
 Context Guardian (cg) watches your context window usage in real time via a statusline and provides on-demand compaction tools. When usage crosses a configurable threshold, the statusline turns red and recommends compaction — preserving your work and keeping Claude sharp.

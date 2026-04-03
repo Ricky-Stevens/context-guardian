@@ -51,7 +51,11 @@ Output ONLY the box. No extra commentary.
 
 Parse `$ARGUMENTS` as `<key> <value>`.
 
-**threshold**: Must be 0.01–0.99. If the user passes a whole number (e.g., "50"), divide by 100 (→ 0.50).
+**threshold**: Must be 0.01–0.99 after normalization. Normalize the user's input:
+- Whole number like "50" → divide by 100 → 0.50
+- Percentage like "50%" → strip the %, divide by 100 → 0.50
+- Decimal like "0.50" or ".5" → use as-is → 0.50
+- If the result is < 0.01 or > 0.99, show an error: "Threshold must be between 1% and 99%."
 
 **max_tokens**: Must be a positive integer.
 

@@ -24,7 +24,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun test
-      - run: bun test --coverage
+      - name: Generate coverage
+        run: bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/lcov.info
 
   test-node:
     name: Test (Node ${{ matrix.node-version }})
@@ -41,3 +46,19 @@ jobs:
       - run: bun install --frozen-lockfile
       # Run only the node:test files (skip bun:test files)
       - run: node --test test/submit.test.mjs test/integration.test.mjs test/edge-cases.test.mjs test/transcript.test.mjs test/extract-helpers.test.mjs test/compaction-e2e.test.mjs test/trim.test.mjs test/tool-summary.test.mjs test/tokens.test.mjs test/handoff.test.mjs
+
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+      - uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

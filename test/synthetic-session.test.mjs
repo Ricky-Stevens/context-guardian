@@ -177,22 +177,25 @@ describe("manifest management", () => {
 
 		const r1 = writeSyntheticSession({
 			checkpointContent: "compact checkpoint",
-			title: "cg",
+			title: "cg:a1b2",
+			type: "compact",
 			projectCwd,
 		});
 		const r2 = writeSyntheticSession({
 			checkpointContent: "handoff checkpoint",
 			title: "cg:my-feature",
+			type: "handoff",
 			projectCwd,
 		});
 
 		const manifestPath = path.join(dataDir, "synthetic-sessions.json");
 		const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-		assert.equal(Object.keys(manifest).length, 2);
-		assert.equal(manifest.cg.uuid, r1.sessionUuid);
+		assert.equal(manifest["cg:a1b2"].uuid, r1.sessionUuid);
+		assert.equal(manifest["cg:a1b2"].type, "compact");
 		assert.equal(manifest["cg:my-feature"].uuid, r2.sessionUuid);
+		assert.equal(manifest["cg:my-feature"].type, "handoff");
 
-		// Both files should exist
+		// Both files should exist — handoff doesn't clean compact entries
 		assert.ok(fs.existsSync(r1.jsonlPath));
 		assert.ok(fs.existsSync(r2.jsonlPath));
 	});
@@ -201,7 +204,8 @@ describe("manifest management", () => {
 		const { writeSyntheticSession } = await loadModule();
 		writeSyntheticSession({
 			checkpointContent: "test",
-			title: "cg",
+			title: "cg:f0f0",
+			type: "compact",
 			projectCwd,
 		});
 
@@ -217,45 +221,69 @@ describe("manifest management", () => {
 // ---------------------------------------------------------------------------
 
 describe("previous session cleanup", () => {
-	it("deletes previous JSONL when writing same title", async () => {
+	it("new compact deletes previous compact JSONL", async () => {
 		const { writeSyntheticSession } = await loadModule();
 
 		const first = writeSyntheticSession({
 			checkpointContent: "first checkpoint",
-			title: "cg",
+			title: "cg:aaaa",
+			type: "compact",
 			projectCwd,
 		});
 		assert.ok(fs.existsSync(first.jsonlPath));
 
 		const second = writeSyntheticSession({
 			checkpointContent: "second checkpoint",
-			title: "cg",
+			title: "cg:bbbb",
+			type: "compact",
 			projectCwd,
 		});
 
-		// First should be deleted, second should exist
-		assert.ok(!fs.existsSync(first.jsonlPath), "first JSONL should be deleted");
-		assert.ok(fs.existsSync(second.jsonlPath), "second JSONL should exist");
-		assert.notEqual(first.sessionUuid, second.sessionUuid);
+		// First compact should be deleted, second should exist
+		assert.ok(!fs.existsSync(first.jsonlPath), "previous compact JSONL should be deleted");
+		assert.ok(fs.existsSync(second.jsonlPath), "new compact JSONL should exist");
 	});
 
-	it("does not delete JSONL for different titles", async () => {
+	it("compact does not delete handoff JSONL", async () => {
 		const { writeSyntheticSession } = await loadModule();
-
-		const compact = writeSyntheticSession({
-			checkpointContent: "compact",
-			title: "cg",
-			projectCwd,
-		});
 
 		const handoff = writeSyntheticSession({
 			checkpointContent: "handoff",
-			title: "cg:feature",
+			title: "cg:my-feature",
+			type: "handoff",
 			projectCwd,
 		});
 
-		assert.ok(fs.existsSync(compact.jsonlPath), "compact JSONL should still exist");
-		assert.ok(fs.existsSync(handoff.jsonlPath), "handoff JSONL should exist");
+		const compact = writeSyntheticSession({
+			checkpointContent: "compact",
+			title: "cg:cccc",
+			type: "compact",
+			projectCwd,
+		});
+
+		assert.ok(fs.existsSync(handoff.jsonlPath), "handoff JSONL must survive compact cleanup");
+		assert.ok(fs.existsSync(compact.jsonlPath), "compact JSONL should exist");
+	});
+
+	it("handoff replaces previous handoff with same title", async () => {
+		const { writeSyntheticSession } = await loadModule();
+
+		const first = writeSyntheticSession({
+			checkpointContent: "first handoff",
+			title: "cg:feature-x",
+			type: "handoff",
+			projectCwd,
+		});
+
+		const second = writeSyntheticSession({
+			checkpointContent: "updated handoff",
+			title: "cg:feature-x",
+			type: "handoff",
+			projectCwd,
+		});
+
+		assert.ok(!fs.existsSync(first.jsonlPath), "old handoff should be replaced");
+		assert.ok(fs.existsSync(second.jsonlPath), "new handoff should exist");
 	});
 
 	it("handles missing previous file gracefully", async () => {
@@ -263,7 +291,8 @@ describe("previous session cleanup", () => {
 
 		const first = writeSyntheticSession({
 			checkpointContent: "first",
-			title: "cg",
+			title: "cg:dddd",
+			type: "compact",
 			projectCwd,
 		});
 
@@ -273,93 +302,11 @@ describe("previous session cleanup", () => {
 		// Should not throw
 		const second = writeSyntheticSession({
 			checkpointContent: "second",
-			title: "cg",
+			title: "cg:eeee",
+			type: "compact",
 			projectCwd,
 		});
 		assert.ok(fs.existsSync(second.jsonlPath));
-	});
-
-	it("retitles previous when it matches currentSessionId instead of deleting", async () => {
-		const { writeSyntheticSession } = await loadModule();
-
-		const first = writeSyntheticSession({
-			checkpointContent: "first",
-			title: "cg",
-			projectCwd,
-		});
-
-		// Simulate: user already /resumed into this synthetic session
-		const second = writeSyntheticSession({
-			checkpointContent: "second",
-			title: "cg",
-			projectCwd,
-			currentSessionId: first.sessionUuid,
-		});
-
-		// Active session should be retitled, not deleted
-		assert.ok(fs.existsSync(first.jsonlPath), "active session JSONL must still exist (retitled)");
-		assert.ok(fs.existsSync(second.jsonlPath));
-		// Last custom-title in the retitled file should be "cg-resumed-*"
-		const lines = fs.readFileSync(first.jsonlPath, "utf8").trim().split("\n");
-		const lastLine = JSON.parse(lines[lines.length - 1]);
-		assert.strictEqual(lastLine.type, "custom-title");
-		assert.ok(lastLine.customTitle.startsWith("cg-resumed-"), `Expected cg-resumed-* title, got: ${lastLine.customTitle}`);
-	});
-
-	it("deletes previous when it does not match currentSessionId", async () => {
-		const { writeSyntheticSession } = await loadModule();
-
-		const first = writeSyntheticSession({
-			checkpointContent: "first",
-			title: "cg",
-			projectCwd,
-		});
-
-		// Different session — previous should be deleted normally
-		const second = writeSyntheticSession({
-			checkpointContent: "second",
-			title: "cg",
-			projectCwd,
-			currentSessionId: "some-other-session-id",
-		});
-
-		assert.ok(!fs.existsSync(first.jsonlPath), "non-active session JSONL should be deleted");
-		assert.ok(fs.existsSync(second.jsonlPath));
-	});
-
-	it("purges pre-manifest files with the same custom title", async () => {
-		const { writeSyntheticSession } = await loadModule();
-
-		// Simulate a pre-manifest synthetic session (written before manifest existed)
-		const sessionsDir = path.join(
-			os.homedir(),
-			".claude",
-			"projects",
-			projectCwd.replace(/[^a-zA-Z0-9]/g, "-"),
-		);
-		fs.mkdirSync(sessionsDir, { recursive: true });
-
-		const staleUuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-		const staleContent = [
-			JSON.stringify({ type: "user", message: { role: "user", content: "old checkpoint" }, uuid: "u1", parentUuid: null, isSidechain: false, timestamp: new Date().toISOString(), userType: "external", cwd: projectCwd, sessionId: staleUuid, version: "1.0.0" }),
-			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" }, uuid: "u2", parentUuid: "u1", isSidechain: false, timestamp: new Date().toISOString(), userType: "external", cwd: projectCwd, sessionId: staleUuid, version: "1.0.0" }),
-			JSON.stringify({ type: "custom-title", customTitle: "cg", sessionId: staleUuid }),
-		].join("\n") + "\n";
-
-		const stalePath = path.join(sessionsDir, `${staleUuid}.jsonl`);
-		fs.writeFileSync(stalePath, staleContent);
-		assert.ok(fs.existsSync(stalePath), "stale file should exist before write");
-
-		// Now write a new synthetic session with title "cg"
-		const { jsonlPath } = writeSyntheticSession({
-			checkpointContent: "new checkpoint",
-			title: "cg",
-			projectCwd,
-		});
-
-		// The stale file should have been purged
-		assert.ok(!fs.existsSync(stalePath), "stale pre-manifest file should be purged");
-		assert.ok(fs.existsSync(jsonlPath), "new synthetic session should exist");
 	});
 
 	it("does not purge files with different custom titles", async () => {

@@ -71,7 +71,9 @@ try {
 		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
 		baselineOverhead = prev.baseline_overhead ?? 0;
 	}
-} catch {}
+} catch (e) {
+	log(`state-read-error session=${session_id}: ${e.message}`);
+}
 
 const savings = estimateSavings(
 	transcript_path,
@@ -82,6 +84,10 @@ const savings = estimateSavings(
 
 try {
 	ensureDataDir();
+	const remaining = Math.max(
+		0,
+		Math.round(thresholdDisplay - parseFloat(pctDisplay)),
+	);
 	atomicWriteFileSync(
 		stateFile(session_id),
 		JSON.stringify({
@@ -91,6 +97,7 @@ try {
 			pct_display: pctDisplay,
 			threshold,
 			threshold_display: thresholdDisplay,
+			remaining_to_alert: remaining,
 			headroom,
 			recommendation,
 			source,
@@ -105,4 +112,5 @@ try {
 	);
 } catch (e) {
 	log(`state-write-error session=${session_id}: ${e.message}`);
+	process.stderr.write(`cg: state-write-error: ${e.message}\n`);
 }

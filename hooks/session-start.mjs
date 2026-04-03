@@ -34,23 +34,9 @@ if (fs.existsSync(DATA_DIR)) {
 }
 
 // ---------------------------------------------------------------------------
-// Defensive purge: remove orphaned synthetic sessions with duplicate "cg" title.
-// Catches ghost files CC recreated after a prior compact retitled the active session.
+// Compact synthetics use unique titles (cg:{hash}) per cycle, so stale-title
+// collisions are no longer possible. No defensive purge needed at startup.
 // ---------------------------------------------------------------------------
-try {
-	const { purgeStaleTitle, getSessionsDir, readManifest } = await import(
-		"../lib/synthetic-session.mjs"
-	);
-	const cwd = input.cwd;
-	if (cwd) {
-		const sessionsDir = getSessionsDir(cwd);
-		const manifest = readManifest();
-		const cgEntry = manifest.cg;
-		purgeStaleTitle(sessionsDir, "cg", cgEntry?.uuid);
-	}
-} catch (e) {
-	log(`session-start-purge-error: ${e.message}`);
-}
 
 // ---------------------------------------------------------------------------
 // Self-healing: if the marketplace repo dir is missing, background-clone it.

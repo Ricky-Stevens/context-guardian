@@ -74,6 +74,7 @@ if (source === "estimated") {
 let smartEstimatePct = 0;
 let recentEstimatePct = 0;
 let baselineOverhead = 0;
+let baselineResponseCount = 0;
 try {
 	const sf = stateFile(session_id);
 	if (fs.existsSync(sf)) {
@@ -81,15 +82,22 @@ try {
 		smartEstimatePct = prev.smart_estimate_pct ?? 0;
 		recentEstimatePct = prev.recent_estimate_pct ?? 0;
 		baselineOverhead = prev.baseline_overhead ?? 0;
+		baselineResponseCount = prev.baseline_response_count ?? 0;
 	}
-} catch {}
+} catch (e) {
+	log(`state-read-error session=${session_id}: ${e.message}`);
+}
 
-// Capture baseline overhead on first response — at this point context is almost
-// entirely system prompts, CLAUDE.md, tool definitions, etc. This measured value
-// is used for all subsequent compaction estimates instead of guessing.
-if (!baselineOverhead && currentTokens > 0) {
-	baselineOverhead = currentTokens;
-	log(`baseline-overhead session=${session_id} tokens=${baselineOverhead}`);
+if (baselineResponseCount < 2 && currentTokens > 0) {
+	if (!baselineOverhead) {
+		baselineOverhead = currentTokens;
+	} else {
+		baselineOverhead = Math.min(baselineOverhead, currentTokens);
+	}
+	baselineResponseCount++;
+	log(
+		`baseline-overhead session=${session_id} tokens=${baselineOverhead} response=${baselineResponseCount}`,
+	);
 
 	// Recompute estimates now that we have the baseline — the submit hook ran
 	// before us and wrote 0 estimates because it didn't have the baseline yet.
@@ -112,6 +120,10 @@ if (!baselineOverhead && currentTokens > 0) {
 
 try {
 	ensureDataDir();
+	const remaining = Math.max(
+		0,
+		Math.round(thresholdDisplay - parseFloat(pctDisplay)),
+	);
 	atomicWriteFileSync(
 		stateFile(session_id),
 		JSON.stringify({
@@ -121,6 +133,7 @@ try {
 			pct_display: pctDisplay,
 			threshold,
 			threshold_display: thresholdDisplay,
+			remaining_to_alert: remaining,
 			headroom,
 			recommendation,
 			source,
@@ -128,6 +141,7 @@ try {
 			smart_estimate_pct: smartEstimatePct,
 			recent_estimate_pct: recentEstimatePct,
 			baseline_overhead: baselineOverhead,
+			baseline_response_count: baselineResponseCount,
 			session_id,
 			transcript_path,
 			ts: Date.now(),
@@ -135,6 +149,7 @@ try {
 	);
 } catch (e) {
 	log(`state-write-error session=${session_id}: ${e.message}`);
+	process.stderr.write(`cg: state-write-error: ${e.message}\n`);
 }
 
 log(

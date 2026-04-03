@@ -19,9 +19,7 @@ Without label:
 node ${CLAUDE_PLUGIN_ROOT}/lib/compact-cli.mjs handoff ${CLAUDE_SESSION_ID} ${CLAUDE_PLUGIN_DATA}
 ```
 
-The output is JSON. If `success` is `true`, display the `statsBlock` value verbatim — it is a pre-formatted box. Then on the next line, display exactly:
-
-**To restore in a future session, type `/resume cg:{label}` (using the name you gave), or `/resume` to browse all sessions.**
+The output is JSON. If `success` is `true`, display the `statsBlock` value verbatim — it is a pre-formatted box. Then on the next line, display the `resumeInstruction` value verbatim (it is already bold-formatted markdown). Do not add any extra text.
 
 If `success` is `false`, display the `error` value.
 
