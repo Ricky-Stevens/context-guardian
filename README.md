@@ -7,11 +7,11 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 
-**Automatic context window monitoring and smart compaction for Claude Code. Zero dependencies required.**
+**Automatic context window monitoring and smart compaction for Claude Code. Zero dependencies.**
 
 Context Guardian (cg) watches your context window usage in real time via a statusline and provides on-demand compaction tools. When usage crosses a configurable threshold, the statusline turns red and recommends compaction — preserving your work and keeping Claude sharp.
 
-Distributed as a **Claude Code plugin** - it's called "cg" due to a quirk of how Claude Code does skills. `/cg:stats` is easier to type than `/context-guardian:stats`.
+Distributed as a **Claude Code plugin** — it's called "cg" due to how Claude Code namespaces skills. `/cg:stats` is easier to type than `/context-guardian:stats`.
 
 ---
 
@@ -19,10 +19,10 @@ Distributed as a **Claude Code plugin** - it's called "cg" due to a quirk of how
 
 ```bash
 /plugin marketplace add https://github.com/Ricky-Stevens/context-guardian # Add the marketplace (one-time)
-/plugin install cg #install the plugin
+/plugin install cg # Install the plugin
 ```
 
-**Note:** Claudes `/reload-plugins` can be a bit sketchy - try opening a new session if you hit issues.
+**Note:** Claude's `/reload-plugins` can be a bit sketchy — try opening a new session if you hit issues.
 
 ### Update
 
@@ -30,7 +30,7 @@ To pull the latest version:
 
 1. Open `/plugins`
 2. Go to **Marketplaces** tab → select the context-guardian marketplace → **Update marketplace**
-3. Inside the market place, go to **Browse Plugins** → select cg → **Update**
+3. Inside the marketplace, go to **Browse Plugins** → select cg → **Update**
 4. Run `/reload-plugins` or restart your session
 
 ### Uninstall
@@ -52,6 +52,8 @@ claude --plugin-dir /path/to/cg
 Context Guardian adds five slash commands:
 
 ### `/cg:stats`
+
+Shows current token usage, compaction estimates, and recommendations.
 
 ```
 ┌─────────────────────────────────────────────────
@@ -75,34 +77,36 @@ Context Guardian adds five slash commands:
 ### `/cg:config`
 
 ```bash
-/cg:config                     # show current config
+/cg:config                     # show current config + auto-detected model/limit
 /cg:config threshold 0.50      # trigger at 50%
 /cg:config max_tokens 1000000  # override token limit
 /cg:config reset               # restore defaults
 ```
 
-The config also shows the **auto-detected model and token limit** from your active session, so you can see what Context Guardian is actually using versus the config fallback.
-
 ### `/cg:compact`
 
-Extracts full conversation history, strips tool calls, tool results, thinking blocks, and system messages. Same compaction engine as the automatic warning.
+Runs Smart Compact — a deterministic extraction engine that removes re-obtainable noise (file reads, grep results, thinking blocks, system messages) while preserving everything that matters: user messages, assistant reasoning, edit diffs, bash commands and output, user decisions, and errors. Typically achieves 70-90% reduction.
+
+After compaction, use `/resume cg` to restore the checkpoint.
 
 ### `/cg:prune`
 
-Drops oldest messages, keeps the last 10 user exchanges (each grouped with their assistant responses). Good when only recent work matters.
+Keeps the last 10 user exchanges (each grouped with their assistant responses and tool summaries). Uses the same extraction engine as Smart Compact. Good when only recent work matters.
+
+After pruning, use `/resume cg` to restore.
 
 ### `/cg:handoff`
 
-Save your current session context for later. Uses the same deterministic extraction engine as Smart Compact — strips tool noise, keeps all decisions and code changes.
+Save your current session context for cross-session continuity. Uses the same extraction engine as Smart Compact.
 
 ```bash
-/cg:handoff                    # save without a description
+/cg:handoff                    # save without a label
 /cg:handoff my auth refactor   # save with a custom name
 ```
 
-Handoff files are saved to `.context-guardian/` in your project root. It is recommended to .gitignore this folder.
+Handoff files are saved to `.context-guardian/` in your project root. Add this directory to your `.gitignore`.
 
-To restore a handoff in a future session, use Claude Code's built-in `/resume` command:
+To restore a handoff in a future session:
 
 ```bash
 /resume cg:my-auth-refactor   # restore a specific handoff by label
@@ -113,25 +117,25 @@ To restore a handoff in a future session, use Claude Code's built-in `/resume` c
 
 ## The Problem: Context Rot
 
-LLMs have a fixed context window - the total amount of text they can "see" at once. Claude Code sessions accumulate context rapidly: every message you send, every file Claude reads, every tool call and its output, every thinking block - it all stacks up.
+LLMs have a fixed context window — the total amount of text they can "see" at once. Claude Code sessions accumulate context rapidly: every message you send, every file Claude reads, every tool call and its output, every thinking block — it all stacks up.
 
 When the context window fills:
 
-- **The U-Shape** Models perform best with information at the beginning or end of prompts. As the prompt gets bigger, the bigger the middle gets.
-- **Claude starts forgetting.** Earlier instructions, architectural decisions, and code context silently drop out of the effective attention window. Claude doesn't tell you it's forgotten - it just stops using that information.
-- **Quality degrades gradually.** You won't get an error. Responses become less coherent, less grounded in your codebase, and more likely to hallucinate. The degradation is continuous, not sudden.
-- **/Compact is destructive.** When Claude Code hits ~95% usage, it summarizes everything into a brief paragraph. This destroys the accumulated context.
+- **The U-Shape.** Models perform best with information at the beginning or end of context. As the prompt grows, the middle gets less attention.
+- **Claude starts forgetting.** Earlier instructions, architectural decisions, and code context silently drop out of the effective attention window. Claude doesn't tell you it's forgotten — it just stops using that information.
+- **Quality degrades gradually.** You won't get an error. Responses become less coherent, less grounded in your codebase, and more likely to hallucinate.
+- **Native `/compact` is destructive.** When Claude Code hits ~95% usage, it summarizes everything into a brief paragraph, destroying the accumulated context.
 
 Context rot is insidious because **it's invisible**. You don't know Claude has forgotten something until the output is wrong.
 
 ### Why This Matters More on Opus 4.6
 
-Opus 4.6 has a **1,000,000 token context window** - 5x larger than the previous 200K. This sounds like a pure advantage, but it creates a unique problem:
+Opus 4.6 has a **1,000,000 token context window** — 5x larger than the previous 200K. This sounds like a pure advantage, but it creates a unique problem:
 
-- **Sessions last longer.** With 1M tokens, you can work for hours without hitting the limit. This means more accumulated context, more tool outputs, more file reads - and more opportunity for subtle quality degradation.
-- **The degradation is slower but deeper.** On Sonnet, you hit the wall at 200K and are forced to compact relatively quickly. On Opus, you can drift into the 40-60% range where quality is noticeably degraded but you haven't hit any hard limit. The model is still "working" - just worse.
-- **Cost scales with context.** Every API call sends the full context window. At 500K tokens of context, each message costs significantly more than at 50K. Compacting early saves money on every subsequent interaction.
-- **Compaction quality depends on what's in context.** At 35%, Claude's full conversation is in sharp focus - it can produce a high-fidelity summary. At 70%, earlier context is already fuzzy, and any summary Claude generates will be lower quality.
+- **Sessions last longer.** With 1M tokens, you can work for hours without hitting the limit. This means more accumulated context, more tool outputs, more file reads — and more opportunity for subtle quality degradation.
+- **The degradation is slower but deeper.** On Sonnet, you hit the wall at 200K and are forced to compact relatively quickly. On Opus, you can drift into the 40-60% range where quality is noticeably degraded but you haven't hit any hard limit.
+- **Cost scales with context.** Every API call sends the full context window. At 500K tokens, each message costs significantly more than at 50K. Compacting early saves money.
+- **Compaction quality depends on what's in context.** At 35%, Claude's full conversation is in sharp focus — it can produce a high-fidelity extraction. At 70%, earlier context is already fuzzy.
 
 The 1M window is powerful, but it requires active management. Context Guardian provides that management.
 
@@ -139,32 +143,32 @@ The 1M window is powerful, but it requires active management. Context Guardian p
 
 ## Why 35%?
 
-Context Guardian triggers at **35% usage** by default. This is deliberately conservative, and here's the reasoning:
+Context Guardian triggers at **35% usage** by default. This is deliberately conservative.
 
 ### The Sweet Spot for Model Recall
 
-Research on LLM attention patterns shows that models have a **U-shaped attention curve** - they attend strongly to the beginning and end of the context, with weaker attention in the middle. As context grows:
+Research on LLM attention patterns shows that models have a **U-shaped attention curve** — they attend strongly to the beginning and end of context, with weaker attention in the middle. As context grows:
 
 | Usage Range | Model Behavior |
 |-------------|---------------|
 | **0-25%** | Full attention across all content. Maximum recall and coherence. |
-| **25-40%** | Still strong. The "middle" of context is small enough that attention covers it well. |
-| **40-60%** | Noticeable degradation. Middle content starts getting less attention. Instructions from early in the conversation may be partially forgotten. |
-| **60-80%** | Significant degradation. Claude may contradict earlier decisions, forget architectural constraints, or hallucinate details about code it read earlier. |
-| **80-95%** | Critical zone. Claude Code's internal trimming begins. Effective context is much smaller than the raw number suggests. |
+| **25-40%** | Still strong. The "middle" is small enough that attention covers it well. |
+| **40-60%** | Noticeable degradation. Middle content gets less attention. Early instructions may be partially forgotten. |
+| **60-80%** | Significant degradation. Claude may contradict earlier decisions, forget constraints, or hallucinate details about code it read earlier. |
+| **80-95%** | Critical zone. Effective context is much smaller than the raw number suggests. |
 | **95%+** | Emergency auto-compact fires. Everything reduced to a brief summary. |
 
-**35% sits at the boundary between "full recall" and "beginning to degrade."** It's the last point where you can compact with full confidence that the summary will be accurate, because Claude still has strong attention over the entire conversation.
+**35% sits at the boundary between "full recall" and "beginning to degrade."** It's the last point where you can extract with full confidence that the output will be accurate, because Claude still has strong attention over the entire conversation.
 
 ### What Actually Fills the Context
 
-In a typical Claude Code session, your actual conversation - what you typed and what Claude replied - is only **30-40% of the total context**. The rest is:
+In a typical Claude Code session, your actual conversation — what you typed and what Claude replied — is only **30-40% of total context**. The rest is:
 
 - **Tool outputs (40-50%):** File reads, grep results, command output. A single large file read can consume 10-20K tokens.
 - **System prompts (5-10%):** CLAUDE.md, plugin instructions, skill descriptions, MCP server configs.
 - **Tool calls and thinking (10-15%):** The structured blocks that Claude generates internally.
 
-Smart Compact strips all of this noise and keeps only the conversation substance. That's why it typically achieves **70-90% reduction** - most of the context is tool infrastructure, not your actual work.
+Smart Compact strips the re-obtainable noise and keeps the decision-relevant content. That's why it typically achieves **70-90% reduction** — most of the context is tool infrastructure, not your actual work.
 
 ### Adjusting the Threshold
 
@@ -181,13 +185,35 @@ Smart Compact strips all of this noise and keeps only the conversation substance
 **When to lower it (0.20-0.30):**
 - Long architectural sessions where early decisions matter throughout
 - Multi-step refactoring where forgetting a constraint is costly
-- You're on Opus 4.6 and want maximum quality preservation
+- You want maximum quality preservation
 
 ---
 
 ## How It Works
 
-### Token Counting - Real Numbers, Not Estimates
+### Compaction Engine
+
+Context Guardian uses a **deterministic string-processing engine** — no LLM is involved in extraction. It removes re-obtainable and disposable data while keeping all decision-relevant content at full fidelity.
+
+**What stays (decision-relevant):**
+- All user text messages (except affirmative confirmations like "yes", "ok")
+- All assistant reasoning text
+- Edit/Write diffs (start+end trimmed if >3K chars)
+- Bash commands and output (start+end trimmed if >5K chars)
+- User answers to questions (AskUserQuestion results)
+- Web search results, Serena write operations, sequential thinking chains
+- Agent results, all error responses
+
+**What's removed (re-obtainable / noise):**
+- File read results (Read, Grep, Glob) — the dominant bloat at 30-50% of tokens
+- Thinking and redacted_thinking blocks
+- System and progress messages
+- Edit/Write success confirmations (just "success")
+- Serena read/query results, context-mode results
+
+**Truncation:** When content exceeds its size limit, it's never chopped at a point. Start+end trim keeps the first N chars (intent) and last N chars (outcome), replacing only the middle with `[...N chars trimmed from middle...]`. This preserves the narrative thread because conclusions appear at the end.
+
+### Token Counting — Real Numbers, Not Estimates
 
 Context Guardian reads **actual token counts** from Claude Code's transcript. Every assistant message includes a `usage` object:
 
@@ -204,31 +230,42 @@ Context Guardian reads **actual token counts** from Claude Code's transcript. Ev
 
 **Context used = `input_tokens` + `cache_creation_input_tokens` + `cache_read_input_tokens`**
 
-These are the real values from the Anthropic API - the same numbers that determine your bill. On the first message of a session (before any assistant response exists), the plugin falls back to a byte-based estimate until real data is available.
-
+These are the real values from the Anthropic API — the same numbers that determine your bill. On the first message of a session (before any assistant response exists), the plugin falls back to a byte-based estimate until real data is available.
 
 ### How Restore Works
 
-After compaction or handoff, Context Guardian writes a **synthetic JSONL session** to Claude Code's session directory. This session contains the checkpoint as a real user message with a custom title (e.g., "cg" or "cg:my-feature").
+After compaction or handoff, Context Guardian writes a **synthetic JSONL session** to Claude Code's session directory. This session contains the checkpoint as a real user message with a custom title (e.g., `cg` or `cg:my-feature`).
 
 When you type `/resume cg`, Claude Code's native resume mechanism finds and loads this synthetic session, replacing the current conversation with the checkpoint content. Because it's a real user message (not injected context), the model gives it full attention.
 
-The flow is:
-1. Run `/cg:compact` or `/cg:handoff [name]` → checkpoint saved + synthetic session created
-2. Type `/resume cg` (or `/resume cg:{label}` for handoffs) → context restored
+The flow:
+1. Run `/cg:compact`, `/cg:prune`, or `/cg:handoff [name]` — checkpoint saved + synthetic session created
+2. Type `/resume cg` (or `/resume cg:{label}` for handoffs) — context restored
 
 ---
 
 ## Architecture
 
-### Hook Events
+### Hooks
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `submit.mjs` | `UserPromptSubmit` | Main logic - monitors usage, writes token state, handles manual compaction |
-| `session-start.mjs` | `SessionStart` | Cleans up session flags, auto-configures statusline, self-healing marketplace clone |
+| `submit.mjs` | `UserPromptSubmit` | Writes token usage state for statusline and `/cg:stats` on every user message |
+| `session-start.mjs` | `SessionStart` | Cleans stale session flags, auto-configures statusline, self-healing marketplace clone |
 | `stop.mjs` | `Stop` | Writes fresh token state after each assistant response. Captures baseline overhead on first response. |
 | `precompact.mjs` | `PreCompact` | Injects CG's extraction as additional context into Claude Code's native `/compact` |
+
+### Skills
+
+Skills invoke `compact-cli.mjs` via Bash (since skills don't fire `UserPromptSubmit`). The CLI sets `CLAUDE_PLUGIN_DATA`, runs the extraction pipeline, and outputs JSON for the skill to display.
+
+| Skill | Entry Point |
+|-------|-------------|
+| `/cg:stats` | `lib/diagnostics.mjs` (health checks) + state file read |
+| `/cg:config` | Direct config file read/write |
+| `/cg:compact` | `lib/compact-cli.mjs smart` → `checkpoint.mjs:performCompaction()` |
+| `/cg:prune` | `lib/compact-cli.mjs recent` → `checkpoint.mjs:performCompaction()` |
+| `/cg:handoff` | `lib/compact-cli.mjs handoff` → `handoff.mjs:performHandoff()` |
 
 ### Token Counting
 
@@ -238,11 +275,11 @@ Two methods, preferring the more accurate. State is written by **both** the subm
 
 2. **Byte estimation (fallback):** Only used on the very first message of a session (before any assistant response). Counts content bytes after the most recent compact marker and divides by 4.
 
-3. **Post-compaction estimates:** After compaction or checkpoint restore, a state file is written with estimated post-compaction token counts so `/cg:stats` works immediately - no need to send a message first.
+3. **Post-compaction estimates:** After compaction or checkpoint restore, a state file is written with estimated post-compaction token counts so `/cg:stats` works immediately.
 
 ### Baseline Overhead
 
-On the first assistant response of each session, the stop hook captures the current token count as `baseline_overhead` — at that point, context is almost entirely system prompts, CLAUDE.md, and tool definitions. This measured value serves as an irreducible floor in all compaction savings estimates, replacing the previous heuristic.
+On the first assistant response of each session, the stop hook captures the current token count as `baseline_overhead` — at that point, context is almost entirely system prompts, CLAUDE.md, and tool definitions. This measured value serves as an irreducible floor in all compaction savings estimates.
 
 ### Statusline
 
@@ -252,14 +289,16 @@ Context Guardian auto-configures a terminal statusline on first session start. I
 Context usage: 3% | 32% remaining until alert | /cg:stats for more
 ```
 
-Color-coded green/yellow/red based on usage level. If another statusline is already configured, CG won't overwrite it.
+Color-coded green/yellow/red based on proximity to threshold. The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`.
 
-### Model & Tokens Auto-Detection
+### Model & Token Limit Auto-Detection
 
-Every assistant message in the transcript includes a `model` field (e.g., `"claude-opus-4-6"`). I have used this basic rule for now - it's imperfect (as token counts can be manually reset, and Sonnet now also supports 1M), but it's the best I have right now. Suggestions welcome.
+Every assistant message in the transcript includes a `model` field (e.g., `"claude-opus-4-6"`). Context Guardian uses this to set the token limit:
 
 - **Opus 4.6+** (major >= 4, minor >= 6): **1,000,000 tokens**
 - **Everything else** (Sonnet, Haiku, older Opus): **200,000 tokens**
+
+You can override this with `/cg:config max_tokens <value>` if the auto-detection doesn't match your setup.
 
 ### Data Storage
 
@@ -272,7 +311,7 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 | `checkpoints/` | Saved compaction checkpoints (markdown) |
 | `synthetic-sessions.json` | Manifest tracking synthetic JSONL sessions for `/resume` |
 
-Additionally, each project has a `.context-guardian/` directory at its root containing:
+Each project also has a `.context-guardian/` directory at its root:
 
 | File | Purpose |
 |------|---------|
@@ -301,14 +340,25 @@ Log entries include token counts, threshold checks, checkpoint creation with com
 - Only happens on the first message of a session. After one exchange, counts become real.
 
 **`/resume cg` doesn't find the session:**
-- Ensure you ran `/cg:compact` or `/cg:handoff` first — these create the synthetic session.
+- Ensure you ran `/cg:compact`, `/cg:prune`, or `/cg:handoff` first — these create the synthetic session.
 - Check logs: `tail -20 ~/.claude/logs/cg.log`
 
 **Plugin not loading:**
-- Ensure Claude Code v1.0.33+ (plugin system requirement)
 - Check logs: `tail -20 ~/.claude/logs/cg.log`
 - Verify plugin is loaded: `/plugins`
 - Try: `/plugin uninstall cg` then `/plugin install cg`
+
+---
+
+## Contributing
+
+```bash
+bun test              # run all tests (594 across 24 files)
+bun test test/<file>  # run a specific test file
+npx biome check       # lint
+```
+
+The e2e test (`test/compaction-e2e.test.mjs`) creates a 26-turn coding session with 19 trackable facts and 5 noise items, verifying every fact survives extraction and all noise is removed. If any change drops a fact, the test names exactly which one was lost.
 
 ---
 
