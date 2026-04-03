@@ -2,6 +2,9 @@
 .serena/
 .claude/
 .context-guardian/
+.scannerwork/
+.mcp.json
+.env.local
 
 node_modules/
 test/fixtures/

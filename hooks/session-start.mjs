@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { log } from "../lib/logger.mjs";
-import { atomicWriteFileSync, DATA_DIR } from "../lib/paths.mjs";
+import { atomicWriteFileSync, resolveDataDir } from "../lib/paths.mjs";
 
 let input;
 try {
@@ -15,15 +15,16 @@ try {
 
 const STALE_MS = 30 * 60 * 1000;
 
-// Clean up stale session-scoped state files (state-*.json) in DATA_DIR.
+// Clean up stale session-scoped state files (state-*.json) in data dir.
 // Each session writes its own state file; old ones accumulate.
-if (fs.existsSync(DATA_DIR)) {
+const dataDir = resolveDataDir();
+if (fs.existsSync(dataDir)) {
 	try {
 		const now3 = Date.now();
 		for (const f of fs
-			.readdirSync(DATA_DIR)
+			.readdirSync(dataDir)
 			.filter((f) => f.startsWith("state-") && f.endsWith(".json"))) {
-			const filePath = path.join(DATA_DIR, f);
+			const filePath = path.join(dataDir, f);
 			try {
 				if (now3 - fs.statSync(filePath).mtimeMs > STALE_MS) {
 					fs.unlinkSync(filePath);

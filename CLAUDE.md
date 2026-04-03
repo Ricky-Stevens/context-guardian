@@ -91,3 +91,16 @@ bun test                        # all tests
 bun test test/handoff.test.mjs  # handoff/resume tests only
 tail -f ~/.claude/logs/cg.log   # watch hook activity
 ```
+
+## Testing
+1. All tests must pass before recommending a push
+2. Code must remain above 80% code coverage on lines, functions, statements and branches
+3Biome linting must pass before recommending a push
+
+## SonarQube Quality Gate
+
+1. Before recommending a push, run `sonar-scanner` using `source .env.local`.
+2. After scanning, use SonarQube MCP tools to check Quality Gate status. 
+3. If issues are flagged, fix holistically (not one rule at a time) and re-scan. Max 3 fix-scan cycles.
+4. If issues persist after 3 cycles, stop and report remaining issues with analysis.
+5. Only recommend pushing when the Quality Gate PASSES.   

@@ -86,7 +86,7 @@ try {
 	ensureDataDir();
 	const remaining = Math.max(
 		0,
-		Math.round(thresholdDisplay - parseFloat(pctDisplay)),
+		Math.round(thresholdDisplay - Number.parseFloat(pctDisplay)),
 	);
 	atomicWriteFileSync(
 		stateFile(session_id),
