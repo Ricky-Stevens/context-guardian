@@ -279,7 +279,7 @@ describe("previous session cleanup", () => {
 		assert.ok(fs.existsSync(second.jsonlPath));
 	});
 
-	it("deletes previous even if it matches currentSessionId", async () => {
+	it("retitles previous when it matches currentSessionId instead of deleting", async () => {
 		const { writeSyntheticSession } = await loadModule();
 
 		const first = writeSyntheticSession({
@@ -296,7 +296,34 @@ describe("previous session cleanup", () => {
 			currentSessionId: first.sessionUuid,
 		});
 
-		assert.ok(!fs.existsSync(first.jsonlPath), "active session JSONL should be deleted");
+		// Active session should be retitled, not deleted
+		assert.ok(fs.existsSync(first.jsonlPath), "active session JSONL must still exist (retitled)");
+		assert.ok(fs.existsSync(second.jsonlPath));
+		// Last custom-title in the retitled file should be "cg-resumed-*"
+		const lines = fs.readFileSync(first.jsonlPath, "utf8").trim().split("\n");
+		const lastLine = JSON.parse(lines[lines.length - 1]);
+		assert.strictEqual(lastLine.type, "custom-title");
+		assert.ok(lastLine.customTitle.startsWith("cg-resumed-"), `Expected cg-resumed-* title, got: ${lastLine.customTitle}`);
+	});
+
+	it("deletes previous when it does not match currentSessionId", async () => {
+		const { writeSyntheticSession } = await loadModule();
+
+		const first = writeSyntheticSession({
+			checkpointContent: "first",
+			title: "cg",
+			projectCwd,
+		});
+
+		// Different session — previous should be deleted normally
+		const second = writeSyntheticSession({
+			checkpointContent: "second",
+			title: "cg",
+			projectCwd,
+			currentSessionId: "some-other-session-id",
+		});
+
+		assert.ok(!fs.existsSync(first.jsonlPath), "non-active session JSONL should be deleted");
 		assert.ok(fs.existsSync(second.jsonlPath));
 	});
 

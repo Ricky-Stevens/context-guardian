@@ -286,10 +286,28 @@ describe("isSystemInjection", () => {
 		assert.equal(isSystemInjection(""), false);
 	});
 
-	it("returns true for Context Checkpoint header", () => {
+	it("returns true for real CG checkpoint with label and Created line", () => {
 		assert.equal(
-			isSystemInjection("# Context Checkpoint\nSaved at 2025-01-01"),
+			isSystemInjection(
+				"# Context Checkpoint (Smart Compact)\n> Created: 2025-01-01T00:00:00.000Z\n\n## Session State",
+			),
 			true,
+		);
+	});
+
+	it("returns true for Keep Recent checkpoint", () => {
+		assert.equal(
+			isSystemInjection(
+				"# Context Checkpoint (Keep Recent)\n> Created: 2025-06-01T12:00:00.000Z\n\nContent here",
+			),
+			true,
+		);
+	});
+
+	it("returns false for user text that starts with Context Checkpoint", () => {
+		assert.equal(
+			isSystemInjection("# Context Checkpoint\nMy notes about checkpoints"),
+			false,
 		);
 	});
 

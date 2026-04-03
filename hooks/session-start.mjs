@@ -34,6 +34,25 @@ if (fs.existsSync(DATA_DIR)) {
 }
 
 // ---------------------------------------------------------------------------
+// Defensive purge: remove orphaned synthetic sessions with duplicate "cg" title.
+// Catches ghost files CC recreated after a prior compact retitled the active session.
+// ---------------------------------------------------------------------------
+try {
+	const { purgeStaleTitle, getSessionsDir, readManifest } = await import(
+		"../lib/synthetic-session.mjs"
+	);
+	const cwd = input.cwd;
+	if (cwd) {
+		const sessionsDir = getSessionsDir(cwd);
+		const manifest = readManifest();
+		const cgEntry = manifest.cg;
+		purgeStaleTitle(sessionsDir, "cg", cgEntry?.uuid);
+	}
+} catch (e) {
+	log(`session-start-purge-error: ${e.message}`);
+}
+
+// ---------------------------------------------------------------------------
 // Self-healing: if the marketplace repo dir is missing, background-clone it.
 // Claude Code resolves CLAUDE_PLUGIN_ROOT from the marketplace location for
 // some hooks; if that dir doesn't exist, hooks fail with

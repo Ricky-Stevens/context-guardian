@@ -87,7 +87,7 @@ describe("generateStateHeader", () => {
 
 	it("skips system injections for Goal", () => {
 		const msgs = [
-			"**User:** # Context Checkpoint\nrestored data",
+			"**User:** # Context Checkpoint (Smart Compact)\n> Created: 2025-01-01T00:00:00.000Z\n\n## Session State",
 			"**User:** Real user message here",
 		];
 		const header = generateStateHeader(msgs, new Set(), 0);
