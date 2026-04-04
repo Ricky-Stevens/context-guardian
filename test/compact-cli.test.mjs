@@ -139,7 +139,9 @@ describe("smart compaction", () => {
 		);
 		writeLine(makeUser("Looks good, go ahead"));
 		writeLine(
-			makeAssistant("Done. I've extracted the validation into a separate function."),
+			makeAssistant(
+				"Done. I've extracted the validation into a separate function.",
+			),
 		);
 
 		fs.writeFileSync(
@@ -172,9 +174,13 @@ describe("smart compaction", () => {
 describe("recent compaction", () => {
 	it("succeeds with extractable transcript content", () => {
 		writeLine(makeUser("Fix the bug in auth.js"));
-		writeLine(makeAssistant("I found the issue. The token was not being refreshed."));
+		writeLine(
+			makeAssistant("I found the issue. The token was not being refreshed."),
+		);
 		writeLine(makeUser("Great, apply the fix"));
-		writeLine(makeAssistant("Applied. The token refresh now happens on every request."));
+		writeLine(
+			makeAssistant("Applied. The token refresh now happens on every request."),
+		);
 
 		fs.writeFileSync(
 			path.join(dataDir, "state-recent1.json"),

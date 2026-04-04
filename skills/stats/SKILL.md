@@ -54,6 +54,7 @@ All values come directly from the JSON — use them as-is. Do NOT compute any va
 │  Context Guardian Stats
 │
 │  Current usage:   {current_tokens with commas} / {max_tokens with commas} tokens ({pct_display}%)
+│  Session size:    {(payload_bytes + baseline_overhead × 4) ÷ 1048576, to 1 decimal, minimum 0.1}MB / 20MB
 │  Threshold:       {threshold_display}% ({remaining_to_alert}% remaining to alert)
 │  Data source:     {source: "real" → "real counts", "estimated" → "estimated"}
 │

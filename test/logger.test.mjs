@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 
 // logger.mjs imports LOG_DIR and LOG_FILE from paths.mjs which reads
 // CLAUDE_PLUGIN_DATA at import time. We can't easily redirect the log
@@ -11,7 +9,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 // We import once and test the singleton behaviour.
 import { log } from "../lib/logger.mjs";
-import { LOG_FILE, LOG_DIR } from "../lib/paths.mjs";
+import { LOG_DIR, LOG_FILE } from "../lib/paths.mjs";
 
 // ===========================================================================
 // log()

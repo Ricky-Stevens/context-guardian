@@ -19,19 +19,36 @@ A Claude Code **plugin** — four hooks + five skills + a shared library. Monito
 
 ## Statusline — Primary UX
 
-The statusline is CG's main communication channel. It shows real-time context usage in the terminal status bar with threshold-relative color coding:
-- **Green:** well below threshold (`pct < threshold * 0.7`)
-- **Yellow:** approaching threshold (`pct < threshold`)
-- **Bold red:** at/past threshold (`pct >= threshold`) — shows "compaction recommended — /cg:compact"
+The statusline is CG's main communication channel. It shows real-time context usage and session size in the terminal status bar:
+
+```
+Context usage: 3% | Session size: 0.4/20MB | /cg:stats for more
+```
+
+**Two independent metrics, two independent color schemes:**
+
+| Metric | Green | Yellow | Red |
+|--------|-------|--------|-----|
+| Context usage | `pct < threshold × 0.7` | `pct < threshold` | `pct >= threshold` |
+| Session size | `< 10MB` | `10–15MB` | `>= 15MB` |
+
+- **Green/Yellow:** labels are dim/grey, only the numbers are colored
+- **Red:** entire label+number goes bold red for maximum visibility
+
+**Session size** is the estimated API request payload — transcript file size + system overhead (baseline_overhead × 4). This is separate from the token context window. The ~20MB API payload limit can lock users out entirely (can't send messages, can't even compact). The statusline warns before that happens.
+
+At threshold, the trailing hint changes to: `compaction recommended — /cg:compact`
 
 The session-start hook auto-configures the statusline and **reclaims it** if overwritten by another tool. The diagnostics check flags a missing CG statusline as a failure.
 
 ## How The Submit Hook Works
 
 1. Every user message → submit hook reads real token counts from `message.usage` in the transcript JSONL. Falls back to byte estimation only on the very first message.
-2. Writes token state to `state-{sessionId}.json` — consumed by `/cg:stats` and the statusline.
-3. Handles manual compaction (`/cg:compact`, `/cg:prune`) via flag files or direct command detection.
-4. `/` messages bypass the hook entirely.
+2. Measures transcript file size (`fs.statSync`) as `payload_bytes` — proxy for the API request payload size.
+3. Writes token state + payload bytes to `state-{sessionId}.json` — consumed by `/cg:stats` and the statusline.
+4. Also writes state to the fixed fallback location (`~/.claude/cg/`) so the statusline can find it (the statusline process doesn't receive `CLAUDE_PLUGIN_DATA`).
+5. Handles manual compaction (`/cg:compact`, `/cg:prune`) via flag files or direct command detection.
+6. `/` messages bypass the hook entirely.
 
 No blocking, no menus, no cooldowns. The statusline handles all context pressure communication.
 
@@ -79,7 +96,15 @@ Never chop at a point. Start+end trim: keep first N chars (intent) + last N char
 
 1. **Real counts (preferred):** `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` from `message.usage` in transcript JSONL. Written by both submit and stop hooks.
 2. **Byte estimation (fallback):** First message only. Content bytes / 4.
-3. **Baseline overhead:** Stop hook captures on first response — irreducible floor (system prompts, tools, CLAUDE.md). Used in all savings estimates.
+3. **Baseline overhead:** Stop hook captures on first response — irreducible floor (system prompts, tools, CLAUDE.md). Used in all savings estimates and session size calculation.
+
+## Session Size (API Payload Monitoring)
+
+The ~20MB API payload limit is **separate from the token context window**. When the raw request body exceeds ~20MB, the API rejects it entirely — you can't send messages, can't compact, can't do anything except `/clear`.
+
+Session size = `transcript file size` + `baseline_overhead × 4` (system overhead in bytes). This is tracked in `payload_bytes` in the state file, displayed in the statusline and `/cg:stats`, and shown as before/after in compaction results.
+
+The statusline reads session size from a fixed fallback location (`~/.claude/cg/state-*.json`) because the statusline process doesn't receive `CLAUDE_PLUGIN_DATA`. Both hooks write to this fallback in addition to the primary data dir.
 
 ## Transcript JSONL Format
 

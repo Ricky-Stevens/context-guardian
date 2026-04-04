@@ -390,8 +390,14 @@ describe("extractConversation — preamble preservation", () => {
 
 		const result = extractConversation(transcriptPath);
 		// The preamble must NOT be trimmed — prior compacted data is preserved verbatim
-		assert.ok(!result.includes("chars of prior history trimmed"), "Preamble must not be trimmed");
-		assert.ok(result.includes(bigPreamble.trim()), "Full preamble content must survive");
+		assert.ok(
+			!result.includes("chars of prior history trimmed"),
+			"Preamble must not be trimmed",
+		);
+		assert.ok(
+			result.includes(bigPreamble.trim()),
+			"Full preamble content must survive",
+		);
 		// New messages should be present
 		assert.ok(result.includes("new question after restore"));
 		assert.ok(result.includes("new answer after restore"));
@@ -399,27 +405,50 @@ describe("extractConversation — preamble preservation", () => {
 
 	it("preserves checkpoint content across simulated multi-cycle compaction", () => {
 		// Cycle 1 checkpoint content (already compacted)
-		const cycle1Content = "# Context Checkpoint (Smart Compact)\n> Created: 2026-04-01\n\nUser: implement auth\nAsst: Added JWT middleware to auth.mjs\n→ Edit `lib/auth.mjs`";
+		const cycle1Content =
+			"# Context Checkpoint (Smart Compact)\n> Created: 2026-04-01\n\nUser: implement auth\nAsst: Added JWT middleware to auth.mjs\n→ Edit `lib/auth.mjs`";
 		writeLine({
 			type: "user",
 			message: { role: "user", content: cycle1Content },
 		});
 		// Synthetic ack — should be filtered
-		writeLine(assistantMsg("Context restored from checkpoint. I have the full session history above including all decisions."));
+		writeLine(
+			assistantMsg(
+				"Context restored from checkpoint. I have the full session history above including all decisions.",
+			),
+		);
 		// New work in cycle 2
 		writeLine(userMsg("now add rate limiting"));
 		writeLine(assistantMsg("Added rate limiter to middleware stack"));
 
 		const result = extractConversation(transcriptPath);
 		// Cycle 1 checkpoint must survive verbatim as preamble
-		assert.ok(result.includes("implement auth"), "Cycle 1 user content preserved");
-		assert.ok(result.includes("Added JWT middleware"), "Cycle 1 assistant content preserved");
-		assert.ok(result.includes("Edit `lib/auth.mjs`"), "Cycle 1 tool summary preserved");
+		assert.ok(
+			result.includes("implement auth"),
+			"Cycle 1 user content preserved",
+		);
+		assert.ok(
+			result.includes("Added JWT middleware"),
+			"Cycle 1 assistant content preserved",
+		);
+		assert.ok(
+			result.includes("Edit `lib/auth.mjs`"),
+			"Cycle 1 tool summary preserved",
+		);
 		// Synthetic ack must be filtered
-		assert.ok(!result.includes("Context restored from checkpoint"), "Synthetic ack filtered");
+		assert.ok(
+			!result.includes("Context restored from checkpoint"),
+			"Synthetic ack filtered",
+		);
 		// Cycle 2 new work must be present
-		assert.ok(result.includes("now add rate limiting"), "Cycle 2 user message present");
-		assert.ok(result.includes("Added rate limiter"), "Cycle 2 assistant message present");
+		assert.ok(
+			result.includes("now add rate limiting"),
+			"Cycle 2 user message present",
+		);
+		assert.ok(
+			result.includes("Added rate limiter"),
+			"Cycle 2 assistant message present",
+		);
 	});
 });
 
@@ -550,8 +579,14 @@ describe("extractConversation — edit coalescing", () => {
 
 		const result = extractConversation(transcriptPath);
 		// Should show coalesced edit with first old + last new
-		assert.ok(result.includes("function old()"), "Should have first old_string");
-		assert.ok(result.includes("function final()"), "Should have last new_string");
+		assert.ok(
+			result.includes("function old()"),
+			"Should have first old_string",
+		);
+		assert.ok(
+			result.includes("function final()"),
+			"Should have last new_string",
+		);
 		// Should mention coalescing
 		assert.ok(
 			result.includes("coalesced") || result.includes("edits"),

@@ -40,7 +40,13 @@ before(() => {
 
 describe("writeCompactionState", () => {
 	it("writes state file with correct computed fields", () => {
-		writeCompactionState("sess1", "/tmp/transcript.jsonl", 50000, 200000, "Smart Compact");
+		writeCompactionState(
+			"sess1",
+			"/tmp/transcript.jsonl",
+			50000,
+			200000,
+			"Smart Compact",
+		);
 
 		const state = readState("sess1");
 		assert.equal(state.current_tokens, 50000);
@@ -77,14 +83,26 @@ describe("writeCompactionState", () => {
 			JSON.stringify({ baseline_overhead: 42000, current_tokens: 100000 }),
 		);
 
-		writeCompactionState("sess4", "/tmp/t.jsonl", 30000, 200000, "Smart Compact");
+		writeCompactionState(
+			"sess4",
+			"/tmp/t.jsonl",
+			30000,
+			200000,
+			"Smart Compact",
+		);
 
 		const state = readState("sess4");
 		assert.equal(state.baseline_overhead, 42000);
 	});
 
 	it("defaults baseline_overhead to 0 when no existing state", () => {
-		writeCompactionState("sess5", "/tmp/t.jsonl", 30000, 200000, "Smart Compact");
+		writeCompactionState(
+			"sess5",
+			"/tmp/t.jsonl",
+			30000,
+			200000,
+			"Smart Compact",
+		);
 
 		const state = readState("sess5");
 		assert.equal(state.baseline_overhead, 0);
@@ -96,7 +114,13 @@ describe("writeCompactionState", () => {
 			JSON.stringify({ current_tokens: 100000 }),
 		);
 
-		writeCompactionState("sess6", "/tmp/t.jsonl", 30000, 200000, "Smart Compact");
+		writeCompactionState(
+			"sess6",
+			"/tmp/t.jsonl",
+			30000,
+			200000,
+			"Smart Compact",
+		);
 
 		const state = readState("sess6");
 		assert.equal(state.baseline_overhead, 0);
@@ -106,7 +130,13 @@ describe("writeCompactionState", () => {
 		fs.writeFileSync(stateFilePath("sess7"), "not json at all{{{");
 
 		// Inner try/catch handles corrupt JSON, falls back to baseline_overhead=0
-		writeCompactionState("sess7", "/tmp/t.jsonl", 30000, 200000, "Smart Compact");
+		writeCompactionState(
+			"sess7",
+			"/tmp/t.jsonl",
+			30000,
+			200000,
+			"Smart Compact",
+		);
 
 		const state = readState("sess7");
 		assert.equal(state.current_tokens, 30000);
@@ -114,7 +144,13 @@ describe("writeCompactionState", () => {
 	});
 
 	it("has source set to estimated", () => {
-		writeCompactionState("sess8", "/tmp/t.jsonl", 10000, 200000, "Smart Compact");
+		writeCompactionState(
+			"sess8",
+			"/tmp/t.jsonl",
+			10000,
+			200000,
+			"Smart Compact",
+		);
 
 		const state = readState("sess8");
 		assert.equal(state.source, "estimated");

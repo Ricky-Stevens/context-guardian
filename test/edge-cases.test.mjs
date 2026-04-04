@@ -436,7 +436,10 @@ describe("logger", () => {
 		log("trigger rotation");
 		// After rotation, the current log should be small (just our message)
 		const size = fs.statSync(logFile).size;
-		assert.ok(size < 1024 * 1024, `Log should be small after rotation, got ${size}`);
+		assert.ok(
+			size < 1024 * 1024,
+			`Log should be small after rotation, got ${size}`,
+		);
 		// Rotated file should exist
 		assert.ok(fs.existsSync(rotated), "Rotated log file should exist");
 		// Clean up
@@ -525,9 +528,12 @@ describe("readTranscriptLines — large file path", () => {
 				}),
 			);
 		}
-		fs.writeFileSync(tp, lines.join("\n") + "\n");
+		fs.writeFileSync(tp, `${lines.join("\n")}\n`);
 		const result = readTranscriptLines(tp);
-		assert.ok(result.length >= 400, `Should read many lines, got ${result.length}`);
+		assert.ok(
+			result.length >= 400,
+			`Should read many lines, got ${result.length}`,
+		);
 		// Last line should be the most recent message
 		assert.ok(
 			result[result.length - 1].includes("message 499"),

@@ -14,7 +14,9 @@ import { log } from "../lib/logger.mjs";
 import {
 	atomicWriteFileSync,
 	ensureDataDir,
+	STATUSLINE_STATE_DIR,
 	stateFile,
+	statuslineStateFile,
 } from "../lib/paths.mjs";
 import { estimateTokens, getTokenUsage } from "../lib/tokens.mjs";
 
@@ -34,6 +36,14 @@ const { session_id = "unknown", transcript_path } = input;
 // Token usage check — write state for statusline and /cg:stats
 // ---------------------------------------------------------------------------
 if (!transcript_path || !fs.existsSync(transcript_path)) process.exit(0);
+
+// Measure raw transcript file size — proxy for API request payload size.
+// The ~20MB API payload limit is separate from the token context window and
+// can lock users out of a session entirely (can't even compact).
+let payloadBytes = 0;
+try {
+	payloadBytes = fs.statSync(transcript_path).size;
+} catch {}
 
 const cfg = loadConfig();
 const threshold = cfg.threshold ?? 0.35;
@@ -88,28 +98,35 @@ try {
 		0,
 		Math.round(thresholdDisplay - Number.parseFloat(pctDisplay)),
 	);
-	atomicWriteFileSync(
-		stateFile(session_id),
-		JSON.stringify({
-			current_tokens: currentTokens,
-			max_tokens: maxTokens,
-			pct,
-			pct_display: pctDisplay,
-			threshold,
-			threshold_display: thresholdDisplay,
-			remaining_to_alert: remaining,
-			headroom,
-			recommendation,
-			source,
-			model: realUsage?.model || "unknown",
-			smart_estimate_pct: savings.smartPct,
-			recent_estimate_pct: savings.recentPct,
-			baseline_overhead: baselineOverhead,
-			session_id,
-			transcript_path,
-			ts: Date.now(),
-		}),
-	);
+	const stateJson = JSON.stringify({
+		current_tokens: currentTokens,
+		max_tokens: maxTokens,
+		pct,
+		pct_display: pctDisplay,
+		threshold,
+		threshold_display: thresholdDisplay,
+		remaining_to_alert: remaining,
+		headroom,
+		recommendation,
+		source,
+		model: realUsage?.model || "unknown",
+		smart_estimate_pct: savings.smartPct,
+		recent_estimate_pct: savings.recentPct,
+		baseline_overhead: baselineOverhead,
+		payload_bytes: payloadBytes,
+		session_id,
+		transcript_path,
+		ts: Date.now(),
+	});
+	atomicWriteFileSync(stateFile(session_id), stateJson);
+
+	// Also write to fixed fallback location so the statusline can find it
+	// (statusline process doesn't receive CLAUDE_PLUGIN_DATA).
+	const slFile = statuslineStateFile(session_id);
+	if (slFile !== stateFile(session_id)) {
+		fs.mkdirSync(STATUSLINE_STATE_DIR, { recursive: true });
+		atomicWriteFileSync(slFile, stateJson);
+	}
 } catch (e) {
 	log(`state-write-error session=${session_id}: ${e.message}`);
 	process.stderr.write(`cg: state-write-error: ${e.message}\n`);

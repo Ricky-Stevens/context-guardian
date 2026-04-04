@@ -1,7 +1,7 @@
 # Context Guardian
 
 [![CI](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
@@ -53,13 +53,14 @@ Context Guardian adds five slash commands:
 
 ### `/cg:stats`
 
-Shows current token usage, compaction estimates, and recommendations.
+Shows current token usage, session size, compaction estimates, and recommendations.
 
 ```
 ┌─────────────────────────────────────────────────
 │  Context Guardian Stats
 │
 │  Current usage:   372,000 / 1,000,000 tokens (37.2%)
+│  Session size:    8.4MB / 20MB
 │  Threshold:       35% (0% remaining to warning)
 │  Data source:     real counts
 │
@@ -125,6 +126,7 @@ When the context window fills:
 - **Claude starts forgetting.** Earlier instructions, architectural decisions, and code context silently drop out of the effective attention window. Claude doesn't tell you it's forgotten - it just stops using that information.
 - **Quality degrades gradually.** You won't get an error. Responses become less coherent, less grounded in your codebase, and more likely to hallucinate.
 - **Native `/compact` is destructive.** When Claude Code hits ~95% usage, it summarizes everything into a brief paragraph, destroying the accumulated context.
+- **The 20MB wall.** Separately from the token limit, the API has a ~20MB request payload size limit. When your session's raw data exceeds this, the API rejects the request entirely — you can't send messages, can't compact, can't do anything except `/clear` and lose everything. Context Guardian tracks session size alongside token usage to warn you before you hit this hard wall.
 
 Context rot is insidious because **it's invisible**. You don't know Claude has forgotten something until the output is wrong.
 
@@ -231,7 +233,7 @@ The flow:
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `submit.mjs` | `UserPromptSubmit` | Writes token usage state for statusline and `/cg:stats` on every user message |
+| `submit.mjs` | `UserPromptSubmit` | Writes token usage + payload size state for statusline and `/cg:stats` on every user message |
 | `session-start.mjs` | `SessionStart` | Cleans stale session flags, auto-configures statusline, self-healing marketplace clone |
 | `stop.mjs` | `Stop` | Writes fresh token state after each assistant response. Captures baseline overhead on first response. |
 | `precompact.mjs` | `PreCompact` | Injects CG's extraction as additional context into Claude Code's native `/compact` |
@@ -264,13 +266,24 @@ On the first assistant response of each session, the stop hook captures the curr
 
 ### Statusline
 
-Context Guardian auto-configures a terminal statusline on first session start. It shows real-time context usage:
+Context Guardian auto-configures a terminal statusline on first session start. It shows real-time context usage and session size:
 
 ```
-Context usage: 3% | 32% remaining until alert | /cg:stats for more
+Context usage: 3% | Session size: 0.4/20MB | /cg:stats for more
 ```
 
-Color-coded green/yellow/red based on proximity to threshold. The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`.
+Two independent metrics with independent color schemes:
+
+| Metric | Green | Yellow | Red |
+|--------|-------|--------|-----|
+| Context usage | Well below threshold | Approaching threshold | At/past threshold |
+| Session size | < 10MB | 10–15MB | ≥ 15MB |
+
+In green/yellow states, labels are dim/grey with only the numbers colored. At red, the entire label+number goes bold red for maximum visibility.
+
+**Session size** tracks the estimated API request payload — transcript file size plus system overhead (prompts, tools, CLAUDE.md). The ~20MB API payload limit is separate from the token context window and can lock you out of a session entirely.
+
+The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`.
 
 ### Model & Token Limit Auto-Detection
 
@@ -290,7 +303,7 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 | File | Purpose |
 |------|---------|
 | `config.json` | Threshold and max_tokens override |
-| `state-{session_id}.json` | Latest token counts, model, transcript path (session-scoped) |
+| `state-{session_id}.json` | Latest token counts, payload bytes, model, transcript path (session-scoped) |
 | `checkpoints/` | Saved compaction checkpoints (markdown) |
 | `synthetic-sessions.json` | Manifest tracking synthetic JSONL sessions for `/resume` |
 
@@ -336,7 +349,7 @@ Log entries include token counts, threshold checks, checkpoint creation with com
 ## Contributing
 
 ```bash
-bun test              # run all tests (594 across 24 files)
+bun test              # run all tests (604 across 24 files)
 npx biome check       # lint
 ```
 

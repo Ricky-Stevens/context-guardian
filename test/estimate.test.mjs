@@ -148,9 +148,18 @@ describe("estimateSavings", () => {
 			userText("hello"),
 			assistantText("hi"),
 		]);
-		assert.deepStrictEqual(estimateSavings(p, 1000, 0), { smartPct: 0, recentPct: 0 });
-		assert.deepStrictEqual(estimateSavings(p, 1000, NaN), { smartPct: 0, recentPct: 0 });
-		assert.deepStrictEqual(estimateSavings(p, 1000, -100), { smartPct: 0, recentPct: 0 });
+		assert.deepStrictEqual(estimateSavings(p, 1000, 0), {
+			smartPct: 0,
+			recentPct: 0,
+		});
+		assert.deepStrictEqual(estimateSavings(p, 1000, NaN), {
+			smartPct: 0,
+			recentPct: 0,
+		});
+		assert.deepStrictEqual(estimateSavings(p, 1000, -100), {
+			smartPct: 0,
+			recentPct: 0,
+		});
 	});
 
 	it("thinking blocks are categorised as removable", () => {

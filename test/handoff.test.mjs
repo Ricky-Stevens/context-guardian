@@ -518,7 +518,6 @@ describe("formatRestoreMenu", () => {
 	});
 });
 
-
 // ---------------------------------------------------------------------------
 // rotateFiles
 // ---------------------------------------------------------------------------
@@ -666,7 +665,9 @@ describe("performHandoff direct", () => {
 			});
 			assert.ok(result);
 			assert.ok(result.handoffPath.includes("cg-handoff-2"));
-			assert.ok(!fs.readFileSync(result.handoffPath, "utf8").includes("Label:"));
+			assert.ok(
+				!fs.readFileSync(result.handoffPath, "utf8").includes("Label:"),
+			);
 		} finally {
 			process.chdir(origCwd);
 		}

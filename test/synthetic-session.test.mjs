@@ -27,7 +27,9 @@ afterEach(() => {
 // but it keeps tests isolated from any module-level state.
 async function loadModule() {
 	// Dynamic import with cache-busting query to get a fresh module each test
-	const mod = await import(`../lib/synthetic-session.mjs?t=${Date.now()}-${Math.random()}`);
+	const mod = await import(
+		`../lib/synthetic-session.mjs?t=${Date.now()}-${Math.random()}`
+	);
 	return mod;
 }
 
@@ -72,7 +74,9 @@ describe("writeSyntheticSession", () => {
 		assert.equal(assistantMsg.message.role, "assistant");
 		assert.ok(Array.isArray(assistantMsg.message.content));
 		assert.equal(assistantMsg.message.content[0].type, "text");
-		assert.ok(assistantMsg.message.content[0].text.includes("Context restored"));
+		assert.ok(
+			assistantMsg.message.content[0].text.includes("Context restored"),
+		);
 		assert.equal(assistantMsg.message.stop_reason, "end_turn");
 		assert.equal(assistantMsg.parentUuid, userMsg.uuid);
 		assert.equal(assistantMsg.sessionId, sessionUuid);
@@ -131,7 +135,11 @@ describe("writeSyntheticSession", () => {
 
 		const stat = fs.statSync(jsonlPath);
 		const mode = stat.mode & 0o777;
-		assert.equal(mode, 0o600, `file mode should be 0600, got ${mode.toString(8)}`);
+		assert.equal(
+			mode,
+			0o600,
+			`file mode should be 0600, got ${mode.toString(8)}`,
+		);
 	});
 
 	it("assistant timestamp is 1ms after user timestamp", async () => {
@@ -212,7 +220,11 @@ describe("manifest management", () => {
 		const manifestPath = path.join(dataDir, "synthetic-sessions.json");
 		const stat = fs.statSync(manifestPath);
 		const mode = stat.mode & 0o777;
-		assert.equal(mode, 0o600, `manifest mode should be 0600, got ${mode.toString(8)}`);
+		assert.equal(
+			mode,
+			0o600,
+			`manifest mode should be 0600, got ${mode.toString(8)}`,
+		);
 	});
 });
 
@@ -240,8 +252,14 @@ describe("previous session cleanup", () => {
 		});
 
 		// First compact should be deleted, second should exist
-		assert.ok(!fs.existsSync(first.jsonlPath), "previous compact JSONL should be deleted");
-		assert.ok(fs.existsSync(second.jsonlPath), "new compact JSONL should exist");
+		assert.ok(
+			!fs.existsSync(first.jsonlPath),
+			"previous compact JSONL should be deleted",
+		);
+		assert.ok(
+			fs.existsSync(second.jsonlPath),
+			"new compact JSONL should exist",
+		);
 	});
 
 	it("compact does not delete handoff JSONL", async () => {
@@ -261,7 +279,10 @@ describe("previous session cleanup", () => {
 			projectCwd,
 		});
 
-		assert.ok(fs.existsSync(handoff.jsonlPath), "handoff JSONL must survive compact cleanup");
+		assert.ok(
+			fs.existsSync(handoff.jsonlPath),
+			"handoff JSONL must survive compact cleanup",
+		);
 		assert.ok(fs.existsSync(compact.jsonlPath), "compact JSONL should exist");
 	});
 
@@ -282,7 +303,10 @@ describe("previous session cleanup", () => {
 			projectCwd,
 		});
 
-		assert.ok(!fs.existsSync(first.jsonlPath), "old handoff should be replaced");
+		assert.ok(
+			!fs.existsSync(first.jsonlPath),
+			"old handoff should be replaced",
+		);
 		assert.ok(fs.existsSync(second.jsonlPath), "new handoff should exist");
 	});
 
@@ -322,11 +346,41 @@ describe("previous session cleanup", () => {
 
 		// Create a handoff synthetic session with a different title
 		const handoffUuid = "11111111-2222-3333-4444-555555555555";
-		const handoffContent = [
-			JSON.stringify({ type: "user", message: { role: "user", content: "handoff" }, uuid: "h1", parentUuid: null, isSidechain: false, timestamp: new Date().toISOString(), userType: "external", cwd: projectCwd, sessionId: handoffUuid, version: "1.0.0" }),
-			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" }, uuid: "h2", parentUuid: "h1", isSidechain: false, timestamp: new Date().toISOString(), userType: "external", cwd: projectCwd, sessionId: handoffUuid, version: "1.0.0" }),
-			JSON.stringify({ type: "custom-title", customTitle: "cg:my-feature", sessionId: handoffUuid }),
-		].join("\n") + "\n";
+		const handoffContent = `${[
+			JSON.stringify({
+				type: "user",
+				message: { role: "user", content: "handoff" },
+				uuid: "h1",
+				parentUuid: null,
+				isSidechain: false,
+				timestamp: new Date().toISOString(),
+				userType: "external",
+				cwd: projectCwd,
+				sessionId: handoffUuid,
+				version: "1.0.0",
+			}),
+			JSON.stringify({
+				type: "assistant",
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "ok" }],
+					stop_reason: "end_turn",
+				},
+				uuid: "h2",
+				parentUuid: "h1",
+				isSidechain: false,
+				timestamp: new Date().toISOString(),
+				userType: "external",
+				cwd: projectCwd,
+				sessionId: handoffUuid,
+				version: "1.0.0",
+			}),
+			JSON.stringify({
+				type: "custom-title",
+				customTitle: "cg:my-feature",
+				sessionId: handoffUuid,
+			}),
+		].join("\n")}\n`;
 
 		const handoffPath = path.join(sessionsDir, `${handoffUuid}.jsonl`);
 		fs.writeFileSync(handoffPath, handoffContent);
@@ -339,7 +393,10 @@ describe("previous session cleanup", () => {
 		});
 
 		// The handoff file should NOT be purged
-		assert.ok(fs.existsSync(handoffPath), "different-title file should not be purged");
+		assert.ok(
+			fs.existsSync(handoffPath),
+			"different-title file should not be purged",
+		);
 	});
 });
 
@@ -455,7 +512,8 @@ describe("edge cases", () => {
 
 	it("handles checkpoint content with special JSON characters", async () => {
 		const { writeSyntheticSession } = await loadModule();
-		const content = 'Line with "quotes" and \\ backslashes\nand\ttabs\nand unicode: \u00e9\u00e0\u00fc';
+		const content =
+			'Line with "quotes" and \\ backslashes\nand\ttabs\nand unicode: \u00e9\u00e0\u00fc';
 		const { jsonlPath } = writeSyntheticSession({
 			checkpointContent: content,
 			title: "cg",
@@ -499,7 +557,10 @@ describe("edge cases", () => {
 	it("handles corrupt manifest gracefully", async () => {
 		const { writeSyntheticSession } = await loadModule();
 		// Write corrupt manifest
-		fs.writeFileSync(path.join(dataDir, "synthetic-sessions.json"), "not json{{{");
+		fs.writeFileSync(
+			path.join(dataDir, "synthetic-sessions.json"),
+			"not json{{{",
+		);
 
 		// Should not throw — readManifest returns {} on parse failure
 		const { jsonlPath } = writeSyntheticSession({
@@ -532,7 +593,7 @@ describe("edge cases", () => {
 		);
 		// Should contain the hash separator
 		assert.ok(
-			dirName.startsWith("-" + longSegment),
+			dirName.startsWith(`-${longSegment}`),
 			"should start with sanitized path prefix",
 		);
 	});

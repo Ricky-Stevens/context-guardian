@@ -51,9 +51,18 @@ describe("diagnostics output", () => {
 	it("each check has name, ok, and detail fields", () => {
 		const result = runDiag(["test-session"]);
 		for (const check of result.checks) {
-			assert.ok(typeof check.name === "string", `name should be string: ${JSON.stringify(check)}`);
-			assert.ok(typeof check.ok === "boolean", `ok should be boolean: ${JSON.stringify(check)}`);
-			assert.ok(typeof check.detail === "string", `detail should be string: ${JSON.stringify(check)}`);
+			assert.ok(
+				typeof check.name === "string",
+				`name should be string: ${JSON.stringify(check)}`,
+			);
+			assert.ok(
+				typeof check.ok === "boolean",
+				`ok should be boolean: ${JSON.stringify(check)}`,
+			);
+			assert.ok(
+				typeof check.detail === "string",
+				`detail should be string: ${JSON.stringify(check)}`,
+			);
 		}
 	});
 });
@@ -107,7 +116,10 @@ describe("transcript check", () => {
 		const check = result.checks.find((c) => c.name === "transcript");
 		assert.ok(check);
 		assert.equal(check.ok, false);
-		assert.ok(check.detail.includes("no state file") || check.detail.includes("Skipped"));
+		assert.ok(
+			check.detail.includes("no state file") ||
+				check.detail.includes("Skipped"),
+		);
 	});
 
 	it("passes when transcript file exists", () => {

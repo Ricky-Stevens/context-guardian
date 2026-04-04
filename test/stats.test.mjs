@@ -53,4 +53,36 @@ describe("formatCompactionStats", () => {
 		assert.ok(block.includes("Compaction Stats"));
 		assert.ok(block.includes("Compaction Stats"));
 	});
+
+	it("includes payload line when prePayloadBytes provided", () => {
+		const content = "x".repeat(400);
+		const prePayloadBytes = 15 * 1024 * 1024; // 15MB
+		const { stats, block } = formatCompactionStats(1000, 10000, content, {
+			prePayloadBytes,
+		});
+
+		assert.ok(block.includes("Session:"));
+		assert.ok(block.includes("15.0MB"));
+		assert.equal(stats.prePayloadBytes, prePayloadBytes);
+		assert.equal(stats.postPayloadBytes, 400); // content byte length
+	});
+
+	it("omits payload line when prePayloadBytes is 0", () => {
+		const { block } = formatCompactionStats(1000, 10000, "x".repeat(100));
+		assert.ok(!block.includes("Session:"));
+	});
+
+	it("omits session line when both prePayloadBytes and overhead are 0", () => {
+		const { block } = formatCompactionStats(1000, 10000, "x".repeat(100));
+		assert.ok(!block.includes("Session:"));
+	});
+
+	it("stats include payload byte values", () => {
+		const content = "x".repeat(800);
+		const { stats } = formatCompactionStats(1000, 10000, content, {
+			prePayloadBytes: 5000000,
+		});
+		assert.equal(stats.prePayloadBytes, 5000000);
+		assert.equal(stats.postPayloadBytes, 800);
+	});
 });

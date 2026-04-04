@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
-	readTranscriptLines,
 	applyTiers,
 	coalesceEdits,
+	readTranscriptLines,
 } from "../lib/transcript.mjs";
 
 // ---------------------------------------------------------------------------
@@ -27,10 +27,16 @@ describe("readTranscriptLines", () => {
 	it("reads a small JSONL file completely", () => {
 		const filePath = path.join(tmpDir, "small.jsonl");
 		const lines = [
-			JSON.stringify({ type: "user", message: { role: "user", content: "hello" } }),
-			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } }),
+			JSON.stringify({
+				type: "user",
+				message: { role: "user", content: "hello" },
+			}),
+			JSON.stringify({
+				type: "assistant",
+				message: { role: "assistant", content: [{ type: "text", text: "hi" }] },
+			}),
 		];
-		fs.writeFileSync(filePath, lines.join("\n") + "\n");
+		fs.writeFileSync(filePath, `${lines.join("\n")}\n`);
 
 		const result = readTranscriptLines(filePath);
 		assert.equal(result.length, 2);
@@ -51,8 +57,14 @@ describe("readTranscriptLines", () => {
 
 	it("filters out empty lines", () => {
 		const filePath = path.join(tmpDir, "gaps.jsonl");
-		const line1 = JSON.stringify({ type: "user", message: { role: "user", content: "a" } });
-		const line2 = JSON.stringify({ type: "user", message: { role: "user", content: "b" } });
+		const line1 = JSON.stringify({
+			type: "user",
+			message: { role: "user", content: "a" },
+		});
+		const line2 = JSON.stringify({
+			type: "user",
+			message: { role: "user", content: "b" },
+		});
 		// Write with extra blank lines
 		fs.writeFileSync(filePath, `${line1}\n\n\n${line2}\n\n`);
 
@@ -226,9 +238,7 @@ describe("applyTiers", () => {
 		// Error responses contain "Error" or "error" typically
 		const messages = buildExchanges(25, {
 			toolResultFn: (i) =>
-				i < 3
-					? `\u2190 Error: ${"E".repeat(500)} something failed`
-					: null,
+				i < 3 ? `\u2190 Error: ${"E".repeat(500)} something failed` : null,
 		});
 
 		const result = applyTiers(messages);

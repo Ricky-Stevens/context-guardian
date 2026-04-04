@@ -31,32 +31,61 @@ function runWithThreshold(input, threshold) {
 	return out;
 }
 
+function runWithPayload(input, payloadBytes) {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-"));
+	fs.writeFileSync(
+		path.join(tmpDir, "config.json"),
+		JSON.stringify({ threshold: 0.35 }),
+	);
+	fs.writeFileSync(
+		path.join(tmpDir, "state-test.json"),
+		JSON.stringify({ payload_bytes: payloadBytes, ts: Date.now() }),
+	);
+	const out = runStatusline(input, { CLAUDE_PLUGIN_DATA: tmpDir });
+	fs.rmSync(tmpDir, { recursive: true, force: true });
+	return out;
+}
+
+// Strip ANSI escape codes for content-only assertions
+function strip(str) {
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI escape code stripping
+	return str.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 describe("statusline render", () => {
 	it("empty object shows '--'", () => {
-		const out = runStatusline({});
+		const out = strip(runStatusline({}));
 		assert.ok(out.includes("Context usage: --"));
 	});
 
 	it("empty context_window shows '--'", () => {
-		const out = runStatusline({ context_window: {} });
+		const out = strip(runStatusline({ context_window: {} }));
 		assert.ok(out.includes("Context usage: --"));
 	});
 
 	it("null used_percentage shows '--'", () => {
-		const out = runStatusline({ context_window: { used_percentage: null } });
+		const out = strip(
+			runStatusline({ context_window: { used_percentage: null } }),
+		);
 		assert.ok(out.includes("Context usage: --"));
 	});
 
-	it("0% is valid, not '--'", () => {
-		const out = runStatusline({ context_window: { used_percentage: 0 } });
-		assert.ok(out.includes("Context usage: 0%"));
-		assert.ok(!out.includes("--"));
+	it("0% is valid, not 'Context usage: --'", () => {
+		const out = strip(
+			runStatusline({ context_window: { used_percentage: 0 } }),
+		);
+		assert.ok(out.includes("Context usage:"));
+		assert.ok(out.includes("0%"));
+		assert.ok(!out.includes("Context usage: --"));
 	});
 
-	it("3% shows percentage and remaining until alert", () => {
-		const out = runStatusline({ context_window: { used_percentage: 3 } });
-		assert.ok(out.includes("Context usage: 3%"));
-		assert.ok(out.includes("32% remaining until alert"));
+	it("3% shows percentage and /cg:stats hint", () => {
+		const out = strip(
+			runStatusline({ context_window: { used_percentage: 3 } }),
+		);
+		assert.ok(out.includes("Context usage:"));
+		assert.ok(out.includes("3%"));
+		assert.ok(out.includes("/cg:stats for more"));
 	});
 
 	it("invalid JSON input falls back to 'Context: --'", () => {
@@ -65,63 +94,129 @@ describe("statusline render", () => {
 	});
 
 	it("output contains /cg:stats for more", () => {
-		const out = runStatusline({ context_window: { used_percentage: 10 } });
+		const out = strip(
+			runStatusline({ context_window: { used_percentage: 10 } }),
+		);
 		assert.ok(out.includes("/cg:stats for more"));
 	});
 });
 
 describe("threshold-relative colors", () => {
-	it("well below threshold shows green", () => {
-		const out = runStatusline({ context_window: { used_percentage: 10 } });
-		assert.ok(out.includes("\x1b[32m")); // green
+	it("well below threshold: dim label, green number", () => {
+		const raw = runStatusline({ context_window: { used_percentage: 10 } });
+		assert.ok(raw.includes("\x1b[2mContext usage:\x1b[0m")); // dim label
+		assert.ok(raw.includes("\x1b[32m10%")); // green number
 	});
 
-	it("approaching threshold shows yellow", () => {
-		const out = runStatusline({ context_window: { used_percentage: 30 } });
-		assert.ok(out.includes("\x1b[33m")); // yellow
+	it("approaching threshold: dim label, yellow number", () => {
+		const raw = runStatusline({ context_window: { used_percentage: 30 } });
+		assert.ok(raw.includes("\x1b[2mContext usage:\x1b[0m")); // dim label
+		assert.ok(raw.includes("\x1b[33m30%")); // yellow number
 	});
 
-	it("at threshold shows bold red", () => {
-		const out = runStatusline({ context_window: { used_percentage: 40 } });
-		assert.ok(out.includes("\x1b[1;31m")); // bold red
+	it("at threshold: bold red on entire label+number", () => {
+		const raw = runStatusline({ context_window: { used_percentage: 40 } });
+		assert.ok(raw.includes("\x1b[1;31mContext usage: 40%")); // bold red full
 	});
 
 	it("colors adjust with custom threshold", () => {
-		const greenOut = runWithThreshold(
+		const greenRaw = runWithThreshold(
 			{ context_window: { used_percentage: 20 } },
 			0.7,
 		);
-		assert.ok(greenOut.includes("\x1b[32m"));
+		assert.ok(greenRaw.includes("\x1b[32m20%"));
 
-		const yellowOut = runWithThreshold(
+		const yellowRaw = runWithThreshold(
 			{ context_window: { used_percentage: 55 } },
 			0.7,
 		);
-		assert.ok(yellowOut.includes("\x1b[33m"));
+		assert.ok(yellowRaw.includes("\x1b[33m55%"));
 
-		const redOut = runWithThreshold(
+		const redRaw = runWithThreshold(
 			{ context_window: { used_percentage: 75 } },
 			0.7,
 		);
-		assert.ok(redOut.includes("\x1b[1;31m"));
+		assert.ok(redRaw.includes("\x1b[1;31mContext usage: 75%"));
+	});
+});
+
+describe("session size display", () => {
+	it("shows session size when state file has payload_bytes", () => {
+		const out = strip(
+			runWithPayload(
+				{ context_window: { used_percentage: 10 } },
+				5 * 1024 * 1024,
+			),
+		);
+		assert.ok(out.includes("Session size:"));
+		assert.ok(out.includes("5.0/20MB"));
+	});
+
+	it("under 10MB: dim label, green number, dim /20MB", () => {
+		const raw = runWithPayload(
+			{ context_window: { used_percentage: 10 } },
+			5 * 1024 * 1024,
+		);
+		assert.ok(raw.includes("\x1b[2mSession size:\x1b[0m")); // dim label
+		assert.ok(raw.includes("\x1b[32m")); // green number
+		assert.ok(raw.includes("\x1b[2m/20MB")); // dim /20MB
+	});
+
+	it("10-15MB: dim label, yellow number", () => {
+		const raw = runWithPayload(
+			{ context_window: { used_percentage: 10 } },
+			12 * 1024 * 1024,
+		);
+		assert.ok(raw.includes("\x1b[2mSession size:\x1b[0m")); // dim label
+		assert.ok(raw.includes("\x1b[33m")); // yellow
+		assert.ok(strip(raw).includes("/20MB"));
+	});
+
+	it("15MB+: bold red on entire label+number", () => {
+		const raw = runWithPayload(
+			{ context_window: { used_percentage: 10 } },
+			17 * 1024 * 1024,
+		);
+		assert.ok(raw.includes("\x1b[1;31mSession size:")); // bold red full
+		assert.ok(strip(raw).includes("17.0/20MB"));
+	});
+
+	it("shows -- when state file missing", () => {
+		const out = strip(
+			runStatusline({ context_window: { used_percentage: 10 } }),
+		);
+		assert.ok(!out.includes("Session size:"));
+		assert.ok(out.includes("--"));
+	});
+
+	it("shows -- when payload_bytes is 0", () => {
+		const out = strip(
+			runWithPayload({ context_window: { used_percentage: 10 } }, 0),
+		);
+		assert.ok(!out.includes("Session size:"));
+		assert.ok(out.includes("--"));
 	});
 });
 
 describe("alert state messaging", () => {
 	it("at threshold shows actionable compaction message", () => {
-		const out = runStatusline({ context_window: { used_percentage: 40 } });
+		const out = strip(
+			runStatusline({ context_window: { used_percentage: 40 } }),
+		);
 		assert.ok(out.includes("compaction recommended"));
 		assert.ok(out.includes("/cg:compact"));
 	});
 
 	it("at threshold uses bold red for alert text", () => {
-		const out = runStatusline({ context_window: { used_percentage: 40 } });
-		assert.ok(out.includes("\x1b[1;31m| compaction recommended"));
+		const raw = runStatusline({ context_window: { used_percentage: 40 } });
+		assert.ok(raw.includes("\x1b[1;31mcompaction recommended"));
 	});
 
-	it("below threshold shows remaining until alert", () => {
-		const out = runStatusline({ context_window: { used_percentage: 10 } });
-		assert.ok(out.includes("remaining until alert"));
+	it("below threshold shows /cg:stats hint instead of compaction message", () => {
+		const out = strip(
+			runStatusline({ context_window: { used_percentage: 10 } }),
+		);
+		assert.ok(out.includes("/cg:stats for more"));
 		assert.ok(!out.includes("compaction recommended"));
 	});
 });
