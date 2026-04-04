@@ -1,5 +1,5 @@
 {
-	"name": "cg",
+	"name": "@ricky-stevens/context-guardian",
 	"version": "2.1.0",
 	"description": "Automatic context window monitoring and smart compaction for Claude Code",
 	"author": "Ricky Stevens",
