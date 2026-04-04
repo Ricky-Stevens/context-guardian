@@ -4,10 +4,11 @@ A Claude Code **plugin** — four hooks + five skills + a shared library. Monito
 
 ## Critical Rules
 
-### Versioning — bump ALL THREE files or marketplace updates break:
+### Versioning — bump ALL FOUR files or marketplace updates break:
 1. `package.json` → `"version"`
 2. `.claude-plugin/plugin.json` → `"version"`
 3. `.claude-plugin/marketplace.json` → `plugins[0].version`
+4. `README.md` → `[![Version]()`
 
 ### Key Conventions
 - Session flags (`.claude/cg-*`) live in the **project's** `.claude/` dir, not plugin data — they're project-scoped and cleaned by SessionStart.
@@ -67,7 +68,7 @@ Never chop at a point. Start+end trim: keep first N chars (intent) + last N char
 
 - `/cg:handoff [name]` → extracts conversation (same as Smart Compact), writes to `.context-guardian/cg-handoff-{slug}-{datetime}.md`
 - Both `/cg:compact` and `/cg:handoff` automatically create synthetic JSONL sessions in Claude Code's session directory
-- User restores via native `/resume cg` (for compaction) or `/resume cg:{label}` (for handoff)
+- User restores via native `/resume cg:{hash}` (for compaction) or `/resume cg:{label}` (for handoff)
 - No custom resume skill — leverages Claude Code's built-in `/resume` which calls `setMessages()` to replace the conversation
 - The synthetic session contains the checkpoint as a real user message (not `additionalContext`), giving higher attention fidelity
 - A manifest (`synthetic-sessions.json` in plugin data dir) tracks one synthetic session per title, cleaning up the previous one on each write
@@ -95,7 +96,7 @@ tail -f ~/.claude/logs/cg.log   # watch hook activity
 ## Testing
 1. All tests must pass before recommending a push
 2. Code must remain above 80% code coverage on lines, functions, statements and branches
-3Biome linting must pass before recommending a push
+3. Biome linting must pass before recommending a push
 
 ## SonarQube Quality Gate
 
