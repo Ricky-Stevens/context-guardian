@@ -61,7 +61,7 @@ Shows current token usage, session size, compaction estimates, and recommendatio
 │
 │  Current usage:   372,000 / 1,000,000 tokens (37.2%)
 │  Session size:    8.4MB / 20MB
-│  Threshold:       35% (0% remaining to warning)
+│  Threshold:       30% (0% remaining to warning)
 │  Data source:     real counts
 │
 │  Model:           claude-opus-4-6 / 1,000,000 tokens
@@ -78,10 +78,10 @@ Shows current token usage, session size, compaction estimates, and recommendatio
 ### `/cg:config`
 
 ```bash
-/cg:config                     # show current config + auto-detected model/limit
-/cg:config threshold 0.50      # trigger at 50%
-/cg:config max_tokens 1000000  # override token limit
-/cg:config reset               # restore defaults
+/cg:config                     # show current config + detected model/limit
+/cg:config threshold 0.50      # override adaptive threshold with fixed 50%
+/cg:config max_tokens 1000000  # override detected token limit
+/cg:config reset               # restore adaptive defaults
 ```
 
 ### `/cg:compact`
@@ -143,13 +143,21 @@ The 1M window is powerful, but it requires active management. Context Guardian p
 
 ---
 
-## Why 35%?
+## Adaptive Threshold
 
-Context Guardian triggers at **35% usage** by default. This is deliberately conservative.
+Context Guardian's compaction threshold **scales automatically with the context window size**. Different window sizes need different thresholds — 35% of 200K is very different from 35% of 1M.
 
-### The Sweet Spot for Model Recall
+| Window | Default Threshold | Alert At | Rationale |
+|--------|------------------|----------|-----------|
+| **200K** | 55% | ~110K tokens | System overhead is 25-45K tokens, so a higher threshold maximises usable conversation space |
+| **500K** | 46% | ~230K tokens | Balanced — quality is still strong, plenty of room before auto-compact |
+| **1M** | 30% | ~300K tokens | Context rot research shows measurable quality degradation at 80-150K tokens regardless of window size. A lower threshold catches this earlier. |
 
-[Research](https://news.mit.edu/2025/unpacking-large-language-model-bias-0617) on LLM attention patterns shows that models have a **U-shaped attention curve** - they attend strongly to the beginning and end of context, with weaker attention in the middle. As context grows:
+Override with `/cg:config threshold <value>` if the adaptive default doesn't suit your workflow.
+
+### Why These Numbers?
+
+Research on LLM attention patterns shows a **U-shaped attention curve** — models attend strongly to the beginning and end of context, with weaker attention in the middle. Quality degrades gradually, not at a cliff:
 
 | Usage Range | Model Behavior |
 |-------------|---------------|
@@ -160,7 +168,7 @@ Context Guardian triggers at **35% usage** by default. This is deliberately cons
 | **80-95%** | Critical zone. Effective context is much smaller than the raw number suggests. |
 | **95%+** | Emergency auto-compact fires. Everything reduced to a brief summary. |
 
-**35% sits at the boundary between "full recall" and "beginning to degrade."** It's the last point where you can extract with full confidence that the output will be accurate, because Claude still has strong attention over the entire conversation.
+The adaptive threshold places the alert at the boundary between "strong recall" and "beginning to degrade" for each window size.
 
 ### What Actually Fills the Context
 
@@ -254,7 +262,7 @@ Skills invoke `compact-cli.mjs` via Bash (since skills don't fire `UserPromptSub
 
 Two methods, preferring the more accurate. State is written by **both** the submit hook (before the response) and the stop hook (after the response), so `/cg:stats` always reflects the latest counts.
 
-1. **Real counts (preferred):** Reads `message.usage` from the most recent assistant message in the transcript JSONL. Calculates `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`. Also detects the model name for auto-detecting max_tokens.
+1. **Real counts (preferred):** Reads `message.usage` from the most recent assistant message in the transcript JSONL. Calculates `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`.
 
 2. **Byte estimation (fallback):** Only used on the very first message of a session (before any assistant response). Counts content bytes after the most recent compact marker and divides by 4.
 
@@ -285,16 +293,9 @@ In green/yellow states, labels are dim/grey with only the numbers colored. At re
 
 The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`.
 
-### Model & Token Limit Auto-Detection
+### Model & Token Limit Detection
 
-Every assistant message in the transcript includes a `model` field (e.g., `"claude-opus-4-6"`). Context Guardian uses this to set the token limit:
-
-- **Opus 4.6+** (major >= 4, minor >= 6): **1,000,000 tokens**
-- **Everything else** (Sonnet, Haiku, older Opus): **200,000 tokens**
-
-This is imperfect - I haven't found a better way to do this yet. Contributions or ideas welcome.
-
-You can override this with `/cg:config max_tokens <value>` if the auto-detection doesn't match your setup.
+Context Guardian automatically detects the actual context window size and model for the current session. The detected values update immediately when you switch models via `/model`. You can override with `/cg:config max_tokens <value>` if needed.
 
 ### Data Storage
 

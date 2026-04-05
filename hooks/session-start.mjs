@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { log } from "../lib/logger.mjs";
-import { atomicWriteFileSync, resolveDataDir } from "../lib/paths.mjs";
+import {
+	atomicWriteFileSync,
+	resolveDataDir,
+	STATUSLINE_STATE_DIR,
+} from "../lib/paths.mjs";
 
 let input;
 try {
@@ -15,22 +19,28 @@ try {
 
 const STALE_MS = 30 * 60 * 1000;
 
-// Clean up stale session-scoped state files (state-*.json) in data dir.
-// Each session writes its own state file; old ones accumulate.
+// Clean up stale session-scoped state files (state-*.json) in both the primary
+// data dir and the statusline fallback dir (~/.claude/cg/).
 const dataDir = resolveDataDir();
-if (fs.existsSync(dataDir)) {
+for (const dir of new Set([dataDir, STATUSLINE_STATE_DIR])) {
+	if (!fs.existsSync(dir)) continue;
 	try {
 		const now3 = Date.now();
 		for (const f of fs
-			.readdirSync(dataDir)
+			.readdirSync(dir)
 			.filter((f) => f.startsWith("state-") && f.endsWith(".json"))) {
-			const filePath = path.join(dataDir, f);
+			const filePath = path.join(dir, f);
 			try {
 				if (now3 - fs.statSync(filePath).mtimeMs > STALE_MS) {
 					fs.unlinkSync(filePath);
 				}
 			} catch {}
 		}
+		// Remove legacy cc-context-window.json (context_window_size is now in state files)
+		const legacyFile = path.join(dir, "cc-context-window.json");
+		try {
+			fs.unlinkSync(legacyFile);
+		} catch {}
 	} catch {}
 }
 

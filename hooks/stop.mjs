@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
+import {
+	adaptiveThreshold,
+	loadConfig,
+	resolveMaxTokens,
+} from "../lib/config.mjs";
 import { estimateSavings } from "../lib/estimate.mjs";
 import { log } from "../lib/logger.mjs";
 import {
@@ -40,27 +44,12 @@ try {
 } catch {}
 
 const cfg = loadConfig();
-const threshold = cfg.threshold ?? 0.35;
 
 const realUsage = getTokenUsage(transcript_path);
 const currentTokens = realUsage
 	? realUsage.current_tokens
 	: estimateTokens(transcript_path);
-const maxTokens = realUsage?.max_tokens || resolveMaxTokens() || 200000;
-const pct = currentTokens / maxTokens;
 const source = realUsage ? "real" : "estimated";
-
-const headroom = Math.max(0, Math.round(maxTokens * threshold - currentTokens));
-const pctDisplay = (pct * 100).toFixed(1);
-const thresholdDisplay = Math.round(threshold * 100);
-let recommendation;
-if (pct < threshold * 0.5)
-	recommendation = "All clear. Plenty of context remaining.";
-else if (pct < threshold)
-	recommendation = "Approaching threshold. Consider wrapping up complex tasks.";
-else
-	recommendation =
-		"At threshold. Compaction recommended — run /cg:compact or /cg:prune.";
 
 // Don't overwrite a recent state file with estimated data — checkpoint writes
 // or the submit hook may have written accurate post-compaction counts that we'd clobber.
@@ -77,8 +66,7 @@ if (source === "estimated") {
 	} catch {}
 }
 
-// Carry forward savings estimates and baseline overhead from the existing state file.
-// This avoids re-reading and re-parsing the full transcript (~50MB at scale).
+// Read previous state for carry-forward values.
 let smartEstimatePct = 0;
 let recentEstimatePct = 0;
 let baselineOverhead = 0;
@@ -95,6 +83,34 @@ try {
 } catch (e) {
 	log(`state-read-error session=${session_id}: ${e.message}`);
 }
+// The statusline state file (~/.claude/cg/) is the primary source for
+// context_window_size and model — the statusline receives these directly
+// from Claude Code and is always authoritative, including after /model switches.
+let ccContextWindowSize = null;
+let ccModelId = null;
+try {
+	const slFile = statuslineStateFile(session_id);
+	if (fs.existsSync(slFile)) {
+		const slState = JSON.parse(fs.readFileSync(slFile, "utf8"));
+		ccContextWindowSize = slState.context_window_size ?? null;
+		ccModelId = slState.cc_model_id ?? null;
+	}
+} catch {}
+const maxTokens = ccContextWindowSize || resolveMaxTokens() || 200000;
+const threshold = adaptiveThreshold(maxTokens);
+const pct = currentTokens / maxTokens;
+
+const headroom = Math.max(0, Math.round(maxTokens * threshold - currentTokens));
+const pctDisplay = (pct * 100).toFixed(1);
+const thresholdDisplay = Math.round(threshold * 100);
+let recommendation;
+if (pct < threshold * 0.5)
+	recommendation = "All clear. Plenty of context remaining.";
+else if (pct < threshold)
+	recommendation = "Approaching threshold. Consider wrapping up complex tasks.";
+else
+	recommendation =
+		"At threshold. Compaction recommended — run /cg:compact or /cg:prune.";
 
 if (baselineResponseCount < 2 && currentTokens > 0) {
 	if (baselineOverhead) {
@@ -135,6 +151,7 @@ try {
 	const stateJson = JSON.stringify({
 		current_tokens: currentTokens,
 		max_tokens: maxTokens,
+		context_window_size: ccContextWindowSize,
 		pct,
 		pct_display: pctDisplay,
 		threshold,
@@ -143,7 +160,7 @@ try {
 		headroom,
 		recommendation,
 		source,
-		model: realUsage?.model || "unknown",
+		model: ccModelId || realUsage?.model || "unknown",
 		smart_estimate_pct: smartEstimatePct,
 		recent_estimate_pct: recentEstimatePct,
 		baseline_overhead: baselineOverhead,

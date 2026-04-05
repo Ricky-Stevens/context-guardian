@@ -15,7 +15,7 @@ If `${CLAUDE_PLUGIN_DATA}` is empty, use `~/.claude/cg/config.json`.
 
 If `$ARGUMENTS` is empty, read these files:
 
-1. `${CLAUDE_PLUGIN_DATA}/config.json` (may not exist — defaults: threshold 0.35, max_tokens 200000)
+1. `${CLAUDE_PLUGIN_DATA}/config.json` (may not exist — threshold is adaptive based on context window size, max_tokens defaults to 200000)
 2. `${CLAUDE_PLUGIN_DATA}/state-${CLAUDE_SESSION_ID}.json` (may not exist)
 
 If the state file exists and has a `model` field, display:

@@ -100,7 +100,7 @@ describe("getTokenUsage", () => {
 		assert.equal(result.current_tokens, 350); // 200 + 100 + 50
 	});
 
-	it("detects Opus 4.6+ as 1M context", () => {
+	it("does not include max_tokens (callers resolve from state file)", () => {
 		writeLine(makeUserMessage("hello"));
 		writeLine(
 			makeAssistantMessage(
@@ -116,46 +116,8 @@ describe("getTokenUsage", () => {
 		);
 
 		const result = getTokenUsage(transcriptPath);
-		assert.equal(result.max_tokens, 1000000);
+		assert.equal(result.max_tokens, undefined);
 		assert.equal(result.model, "claude-opus-4-6-20260101");
-	});
-
-	it("detects Sonnet as 200K context", () => {
-		writeLine(makeUserMessage("hello"));
-		writeLine(
-			makeAssistantMessage(
-				"hi",
-				{
-					input_tokens: 100,
-					cache_creation_input_tokens: 0,
-					cache_read_input_tokens: 0,
-					output_tokens: 10,
-				},
-				"claude-sonnet-4-20250514",
-			),
-		);
-
-		const result = getTokenUsage(transcriptPath);
-		assert.equal(result.max_tokens, 200000);
-	});
-
-	it("detects future Opus 5.x as 1M context", () => {
-		writeLine(makeUserMessage("hello"));
-		writeLine(
-			makeAssistantMessage(
-				"hi",
-				{
-					input_tokens: 100,
-					cache_creation_input_tokens: 0,
-					cache_read_input_tokens: 0,
-					output_tokens: 10,
-				},
-				"claude-opus-5-0",
-			),
-		);
-
-		const result = getTokenUsage(transcriptPath);
-		assert.equal(result.max_tokens, 1000000);
 	});
 
 	it("handles zero usage values", () => {

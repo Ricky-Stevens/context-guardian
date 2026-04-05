@@ -92,6 +92,16 @@ Never chop at a point. Start+end trim: keep first N chars (intent) + last N char
 - Compaction checkpoints are also copied to `.context-guardian/cg-checkpoint-*.md` for user visibility
 - `rotateFiles` sorts by mtime (not filename) because label-prefixed filenames break alphabetical chronological ordering
 
+## Model & Token Limit Detection
+
+The statusline receives the authoritative `context_window_size` and `model.id` directly from Claude Code's session JSON. It persists these to the per-session state file in `~/.claude/cg/`. Hooks read from this file as the primary source — values update immediately after `/model` switches.
+
+Fallback chain when the statusline hasn't fired yet (first message): `config.max_tokens` → `200000`.
+
+## Adaptive Threshold
+
+The compaction threshold scales with context window size: 55% at 200K, 30% at 1M (linear interpolation, clamped [25%, 55%]). Computed by `computeAdaptiveThreshold()` in `lib/config.mjs`. If the user explicitly sets a threshold via `/cg:config threshold X`, the explicit value wins.
+
 ## Token Counting
 
 1. **Real counts (preferred):** `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` from `message.usage` in transcript JSONL. Written by both submit and stop hooks.

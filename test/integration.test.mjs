@@ -56,7 +56,10 @@ function runHook(input) {
 			input: stdin,
 			encoding: "utf8",
 			timeout: 5000,
-			env: { ...process.env, CLAUDE_PLUGIN_DATA: dataDir },
+			env: {
+				...process.env,
+				CLAUDE_PLUGIN_DATA: dataDir,
+			},
 		});
 		return stdout ? JSON.parse(stdout) : null;
 	} catch (e) {

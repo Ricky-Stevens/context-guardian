@@ -8,7 +8,11 @@
  * @module submit-hook
  */
 import fs from "node:fs";
-import { loadConfig, resolveMaxTokens } from "../lib/config.mjs";
+import {
+	adaptiveThreshold,
+	loadConfig,
+	resolveMaxTokens,
+} from "../lib/config.mjs";
 import { estimateSavings } from "../lib/estimate.mjs";
 import { log } from "../lib/logger.mjs";
 import {
@@ -46,15 +50,40 @@ try {
 } catch {}
 
 const cfg = loadConfig();
-const threshold = cfg.threshold ?? 0.35;
 
 const realUsage = getTokenUsage(transcript_path);
 const currentTokens = realUsage
 	? realUsage.current_tokens
 	: estimateTokens(transcript_path);
-const maxTokens = realUsage?.max_tokens || resolveMaxTokens() || 200000;
-const pct = currentTokens / maxTokens;
 const source = realUsage ? "real" : "estimated";
+
+// Read previous state for baseline overhead.
+let baselineOverhead = 0;
+try {
+	const sf = stateFile(session_id);
+	if (fs.existsSync(sf)) {
+		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
+		baselineOverhead = prev.baseline_overhead ?? 0;
+	}
+} catch (e) {
+	log(`state-read-error session=${session_id}: ${e.message}`);
+}
+// The statusline state file (~/.claude/cg/) is the primary source for
+// context_window_size and model — the statusline receives these directly
+// from Claude Code and is always authoritative, including after /model switches.
+let ccContextWindowSize = null;
+let ccModelId = null;
+try {
+	const slFile = statuslineStateFile(session_id);
+	if (fs.existsSync(slFile)) {
+		const slState = JSON.parse(fs.readFileSync(slFile, "utf8"));
+		ccContextWindowSize = slState.context_window_size ?? null;
+		ccModelId = slState.cc_model_id ?? null;
+	}
+} catch {}
+const maxTokens = ccContextWindowSize || resolveMaxTokens() || 200000;
+const threshold = adaptiveThreshold(maxTokens);
+const pct = currentTokens / maxTokens;
 
 log(
 	`check session=${session_id} tokens=${currentTokens}/${maxTokens} pct=${(pct * 100).toFixed(1)}% threshold=${(threshold * 100).toFixed(0)}% source=${source}`,
@@ -73,18 +102,6 @@ else
 	recommendation =
 		"At threshold. Compaction recommended — run /cg:compact or /cg:prune.";
 
-// Read measured baseline overhead from state (captured by stop hook on first response)
-let baselineOverhead = 0;
-try {
-	const sf = stateFile(session_id);
-	if (fs.existsSync(sf)) {
-		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
-		baselineOverhead = prev.baseline_overhead ?? 0;
-	}
-} catch (e) {
-	log(`state-read-error session=${session_id}: ${e.message}`);
-}
-
 const savings = estimateSavings(
 	transcript_path,
 	currentTokens,
@@ -98,9 +115,10 @@ try {
 		0,
 		Math.round(thresholdDisplay - Number.parseFloat(pctDisplay)),
 	);
-	const stateJson = JSON.stringify({
+	const stateObj = {
 		current_tokens: currentTokens,
 		max_tokens: maxTokens,
+		context_window_size: ccContextWindowSize,
 		pct,
 		pct_display: pctDisplay,
 		threshold,
@@ -109,7 +127,7 @@ try {
 		headroom,
 		recommendation,
 		source,
-		model: realUsage?.model || "unknown",
+		model: ccModelId || realUsage?.model || "unknown",
 		smart_estimate_pct: savings.smartPct,
 		recent_estimate_pct: savings.recentPct,
 		baseline_overhead: baselineOverhead,
@@ -117,7 +135,8 @@ try {
 		session_id,
 		transcript_path,
 		ts: Date.now(),
-	});
+	};
+	const stateJson = JSON.stringify(stateObj);
 	atomicWriteFileSync(stateFile(session_id), stateJson);
 
 	// Also write to fixed fallback location so the statusline can find it
