@@ -60,8 +60,8 @@ describe("writeCompactionState", () => {
 		assert.equal(state.transcript_path, "/tmp/transcript.jsonl");
 		assert.equal(state.session_id, "sess1");
 		assert.equal(state.model, "unknown");
-		assert.equal(state.smart_estimate_pct, 0);
-		assert.equal(state.recent_estimate_pct, 0);
+		assert.equal(state.smart_estimate_pct, undefined);
+		assert.equal(state.recent_estimate_pct, undefined);
 		assert.equal(typeof state.ts, "number");
 	});
 

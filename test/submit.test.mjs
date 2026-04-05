@@ -135,7 +135,7 @@ describe("token state writing", () => {
 		assert.ok(state.recommendation.includes("All clear"));
 	});
 
-	it("includes savings estimates in state", () => {
+	it("does not include savings estimates in state (removed — inaccurate)", () => {
 		writeLine(makeUser("hello"));
 		writeLine(makeAssistant("hi", HIGH_USAGE));
 
@@ -143,14 +143,8 @@ describe("token state writing", () => {
 
 		const sf = path.join(dataDir, "state-test-session-1234.json");
 		const state = JSON.parse(fs.readFileSync(sf, "utf8"));
-		assert.ok(
-			state.smart_estimate_pct != null,
-			"smart_estimate_pct should exist",
-		);
-		assert.ok(
-			state.recent_estimate_pct != null,
-			"recent_estimate_pct should exist",
-		);
+		assert.equal(state.smart_estimate_pct, undefined);
+		assert.equal(state.recent_estimate_pct, undefined);
 	});
 });
 

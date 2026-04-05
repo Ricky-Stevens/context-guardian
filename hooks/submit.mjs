@@ -8,12 +8,7 @@
  * @module submit-hook
  */
 import fs from "node:fs";
-import {
-	adaptiveThreshold,
-	loadConfig,
-	resolveMaxTokens,
-} from "../lib/config.mjs";
-import { estimateSavings } from "../lib/estimate.mjs";
+import { adaptiveThreshold, resolveMaxTokens } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
 	atomicWriteFileSync,
@@ -48,8 +43,6 @@ let payloadBytes = 0;
 try {
 	payloadBytes = fs.statSync(transcript_path).size;
 } catch {}
-
-const cfg = loadConfig();
 
 const realUsage = getTokenUsage(transcript_path);
 const currentTokens = realUsage
@@ -102,13 +95,6 @@ else
 	recommendation =
 		"At threshold. Compaction recommended — run /cg:compact or /cg:prune.";
 
-const savings = estimateSavings(
-	transcript_path,
-	currentTokens,
-	maxTokens,
-	baselineOverhead,
-);
-
 try {
 	ensureDataDir();
 	const remaining = Math.max(
@@ -128,8 +114,6 @@ try {
 		recommendation,
 		source,
 		model: ccModelId || realUsage?.model || "unknown",
-		smart_estimate_pct: savings.smartPct,
-		recent_estimate_pct: savings.recentPct,
 		baseline_overhead: baselineOverhead,
 		payload_bytes: payloadBytes,
 		session_id,

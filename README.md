@@ -1,7 +1,7 @@
 # Context Guardian
 
 [![CI](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-2.1.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
@@ -53,7 +53,7 @@ Context Guardian adds five slash commands:
 
 ### `/cg:stats`
 
-Shows current token usage, session size, compaction estimates, and recommendations.
+Shows current token usage, session size, threshold, and recommendations.
 
 ```
 ┌─────────────────────────────────────────────────
@@ -62,15 +62,11 @@ Shows current token usage, session size, compaction estimates, and recommendatio
 │  Current usage:   372,000 / 1,000,000 tokens (37.2%)
 │  Session size:    8.4MB / 20MB
 │  Threshold:       30% (0% remaining to warning)
-│  Data source:     real counts
-│
 │  Model:           claude-opus-4-6 / 1,000,000 tokens
-│  Last updated:    12 seconds ago
 │
-│  /cg:compact         ~37.2% → ~5%
-│  /cg:prune           ~37.2% → ~3%
-│
-│  /cg:handoff [name]  save session for later
+│  /cg:compact        smart compact — strips file reads, system noise
+│  /cg:prune          keep last 10 exchanges only
+│  /cg:handoff [name] save session for later
 │
 └─────────────────────────────────────────────────
 ```
@@ -258,19 +254,9 @@ Skills invoke `compact-cli.mjs` via Bash (since skills don't fire `UserPromptSub
 | `/cg:prune` | `lib/compact-cli.mjs recent` → `checkpoint.mjs:performCompaction()` |
 | `/cg:handoff` | `lib/compact-cli.mjs handoff` → `handoff.mjs:performHandoff()` |
 
-### Token Counting
-
-Two methods, preferring the more accurate. State is written by **both** the submit hook (before the response) and the stop hook (after the response), so `/cg:stats` always reflects the latest counts.
-
-1. **Real counts (preferred):** Reads `message.usage` from the most recent assistant message in the transcript JSONL. Calculates `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`.
-
-2. **Byte estimation (fallback):** Only used on the very first message of a session (before any assistant response). Counts content bytes after the most recent compact marker and divides by 4.
-
-3. **Post-compaction estimates:** After compaction or checkpoint restore, a state file is written with estimated post-compaction token counts so `/cg:stats` works immediately.
-
 ### Baseline Overhead
 
-On the first assistant response of each session, the stop hook captures the current token count as `baseline_overhead` - at that point, context is almost entirely system prompts, CLAUDE.md, and tool definitions. This measured value serves as an irreducible floor in all compaction savings estimates.
+On the first assistant response of each session, the stop hook captures the current token count as `baseline_overhead` - at that point, context is almost entirely system prompts, CLAUDE.md, and tool definitions. This measured value serves as an irreducible floor in compaction stats and session size calculations.
 
 ### Statusline
 

@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import {
-	adaptiveThreshold,
-	loadConfig,
-	resolveMaxTokens,
-} from "../lib/config.mjs";
-import { estimateSavings } from "../lib/estimate.mjs";
+import { adaptiveThreshold, resolveMaxTokens } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
 	atomicWriteFileSync,
@@ -19,10 +14,8 @@ import { estimateTokens, getTokenUsage } from "../lib/tokens.mjs";
 // ---------------------------------------------------------------------------
 // Stop hook — writes fresh token counts after each assistant response.
 //
-// PERFORMANCE: Does NOT call estimateSavings (which reads the full transcript).
-// The submit hook already computed and saved savings estimates. This hook only
-// updates the token counts (cheap — tail-reads 32KB) and carries forward the
-// existing savings estimates from the state file.
+// Lightweight: tail-reads 32KB of the transcript for token counts, captures
+// baseline overhead on the first 2 responses, and writes state.
 // ---------------------------------------------------------------------------
 let input;
 try {
@@ -42,8 +35,6 @@ let payloadBytes = 0;
 try {
 	payloadBytes = fs.statSync(transcript_path).size;
 } catch {}
-
-const cfg = loadConfig();
 
 const realUsage = getTokenUsage(transcript_path);
 const currentTokens = realUsage
@@ -67,16 +58,12 @@ if (source === "estimated") {
 }
 
 // Read previous state for carry-forward values.
-let smartEstimatePct = 0;
-let recentEstimatePct = 0;
 let baselineOverhead = 0;
 let baselineResponseCount = 0;
 try {
 	const sf = stateFile(session_id);
 	if (fs.existsSync(sf)) {
 		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
-		smartEstimatePct = prev.smart_estimate_pct ?? 0;
-		recentEstimatePct = prev.recent_estimate_pct ?? 0;
 		baselineOverhead = prev.baseline_overhead ?? 0;
 		baselineResponseCount = prev.baseline_response_count ?? 0;
 	}
@@ -122,24 +109,6 @@ if (baselineResponseCount < 2 && currentTokens > 0) {
 	log(
 		`baseline-overhead session=${session_id} tokens=${baselineOverhead} response=${baselineResponseCount}`,
 	);
-
-	// Recompute estimates now that we have the baseline — the submit hook ran
-	// before us and wrote 0 estimates because it didn't have the baseline yet.
-	try {
-		const savings = estimateSavings(
-			transcript_path,
-			currentTokens,
-			maxTokens,
-			baselineOverhead,
-		);
-		smartEstimatePct = savings.smartPct;
-		recentEstimatePct = savings.recentPct;
-		log(
-			`baseline-recompute session=${session_id} smart=${smartEstimatePct}% recent=${recentEstimatePct}%`,
-		);
-	} catch (e) {
-		log(`baseline-recompute-error: ${e.message}`);
-	}
 }
 
 try {
@@ -161,8 +130,6 @@ try {
 		recommendation,
 		source,
 		model: ccModelId || realUsage?.model || "unknown",
-		smart_estimate_pct: smartEstimatePct,
-		recent_estimate_pct: recentEstimatePct,
 		baseline_overhead: baselineOverhead,
 		baseline_response_count: baselineResponseCount,
 		payload_bytes: payloadBytes,

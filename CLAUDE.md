@@ -106,7 +106,7 @@ The compaction threshold scales with context window size: 55% at 200K, 30% at 1M
 
 1. **Real counts (preferred):** `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` from `message.usage` in transcript JSONL. Written by both submit and stop hooks.
 2. **Byte estimation (fallback):** First message only. Content bytes / 4.
-3. **Baseline overhead:** Stop hook captures on first response — irreducible floor (system prompts, tools, CLAUDE.md). Used in all savings estimates and session size calculation.
+3. **Baseline overhead:** Stop hook captures on first response — irreducible floor (system prompts, tools, CLAUDE.md). Used in compaction stats and session size calculation.
 
 ## Session Size (API Payload Monitoring)
 
