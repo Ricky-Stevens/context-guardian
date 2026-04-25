@@ -59,7 +59,7 @@ Shows current token usage, session size, threshold, and recommendations.
 ┌─────────────────────────────────────────────────
 │  Context Guardian Stats
 │
-│  Current usage:   372,000 / 1,000,000 tokens (37.2%)
+│  Context usage:   372,000 / 1,000,000 tokens (37.2%)
 │  Session size:    8.4MB / 20MB
 │  Threshold:       30% (0% remaining to warning)
 │  Model:           claude-opus-4-6 / 1,000,000 tokens

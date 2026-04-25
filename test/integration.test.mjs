@@ -59,6 +59,7 @@ function runHook(input) {
 			env: {
 				...process.env,
 				CLAUDE_PLUGIN_DATA: dataDir,
+				CG_STATE_DIR: dataDir,
 			},
 		});
 		return stdout ? JSON.parse(stdout) : null;
@@ -81,9 +82,13 @@ beforeEach(() => {
 		path.join(dataDir, "config.json"),
 		JSON.stringify({ threshold: 0.01, max_tokens: 200000 }),
 	);
+	// Redirect statusline-state writes to the test's data dir so the
+	// suite doesn't pollute the user's real ~/.claude/cg/.
+	process.env.CG_STATE_DIR = dataDir;
 });
 
 afterEach(() => {
+	delete process.env.CG_STATE_DIR;
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -559,8 +564,11 @@ describe("writeCompactionState", () => {
 			sessionId: "test-wcs",
 		});
 		assert.ok(result, "Should produce a result");
-		assert.ok(result.stats.postTokens > 0, "Should have post-token count");
-		assert.ok(result.stats.saved >= 0, "Should compute savings");
+		assert.ok(
+			result.stats.checkpointTokens > 0,
+			"Should have checkpoint-token count",
+		);
+		assert.ok(result.stats.removed >= 0, "Should compute removed tokens");
 	});
 
 	it("performCompaction reads baseline_overhead from state file", () => {
@@ -579,7 +587,8 @@ describe("writeCompactionState", () => {
 			sessionId: "test-bo",
 		});
 		assert.ok(result, "Should produce a result");
-		// The overhead should factor into post-token calculation
-		assert.ok(result.stats.postTokens > 0);
+		// Baseline overhead should subtract from the removed-tokens calculation,
+		// since baseline isn't compactable.
+		assert.ok(result.stats.checkpointTokens > 0);
 	});
 });

@@ -13,7 +13,7 @@ import { log } from "../lib/logger.mjs";
 import {
 	atomicWriteFileSync,
 	ensureDataDir,
-	STATUSLINE_STATE_DIR,
+	resolveStatuslineStateDir,
 	stateFile,
 	statuslineStateFile,
 } from "../lib/paths.mjs";
@@ -127,7 +127,7 @@ try {
 	// (statusline process doesn't receive CLAUDE_PLUGIN_DATA).
 	const slFile = statuslineStateFile(session_id);
 	if (slFile !== stateFile(session_id)) {
-		fs.mkdirSync(STATUSLINE_STATE_DIR, { recursive: true });
+		fs.mkdirSync(resolveStatuslineStateDir(), { recursive: true });
 		atomicWriteFileSync(slFile, stateJson);
 	}
 } catch (e) {

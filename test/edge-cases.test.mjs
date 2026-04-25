@@ -42,7 +42,11 @@ describe("submit hook — invalid stdin", () => {
 				input: "NOT VALID JSON{{{",
 				encoding: "utf8",
 				timeout: 5000,
-				env: { ...process.env, CLAUDE_PLUGIN_DATA: tmpDir },
+				env: {
+					...process.env,
+					CLAUDE_PLUGIN_DATA: tmpDir,
+					CG_STATE_DIR: tmpDir,
+				},
 			});
 			assert.equal(stdout.trim(), "");
 		} catch (e) {
@@ -92,7 +96,11 @@ describe("submit hook — corrupt config", () => {
 				}),
 				encoding: "utf8",
 				timeout: 5000,
-				env: { ...process.env, CLAUDE_PLUGIN_DATA: dataDir2 },
+				env: {
+					...process.env,
+					CLAUDE_PLUGIN_DATA: dataDir2,
+					CG_STATE_DIR: dataDir2,
+				},
 			});
 		} catch (e) {
 			if (e.status !== 0) throw e;

@@ -62,6 +62,12 @@ function runCli(args, opts = {}) {
 		encoding: "utf8",
 		timeout: 5000,
 		cwd: opts.cwd || cwd,
+		env: {
+			...process.env,
+			// Isolate the statusline state-file writes so the suite doesn't
+			// pollute the user's real ~/.claude/cg/.
+			CG_STATE_DIR: opts.stateDir || dataDir,
+		},
 	});
 }
 
@@ -80,9 +86,12 @@ beforeEach(() => {
 	fs.mkdirSync(cwd, { recursive: true });
 	fs.mkdirSync(dataDir, { recursive: true });
 	fs.writeFileSync(transcriptPath, "");
+	// Keep statusline-state writes inside the test's tmp dir.
+	process.env.CG_STATE_DIR = dataDir;
 });
 
 afterEach(() => {
+	delete process.env.CG_STATE_DIR;
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -212,9 +221,13 @@ describe("performHandoff via compact-cli", () => {
 
 		const result = JSON.parse(runCli(["handoff", "test-session", dataDir]));
 
-		assert.ok(result.statsBlock.includes("Before:"));
-		assert.ok(result.statsBlock.includes("After:"));
-		assert.ok(result.statsBlock.includes("Saved:"));
+		assert.ok(result.statsBlock.includes("Context usage:"));
+		assert.ok(result.statsBlock.includes("Stripped:"));
+		// Old vocabulary should be gone
+		assert.ok(!result.statsBlock.includes("Before:"));
+		assert.ok(!result.statsBlock.includes("After:"));
+		assert.ok(!result.statsBlock.includes("Captured:"));
+		assert.ok(!result.statsBlock.match(/Saved:\s+~/));
 	});
 });
 

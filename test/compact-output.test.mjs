@@ -71,7 +71,7 @@ describe("compactMessages", () => {
 	it("strips stats box messages", () => {
 		const msgs = [
 			"**User:** check stats",
-			"**Assistant:** ┌───\n│  Context Guardian Stats\n│\n│  Current usage: 50,000\n└───",
+			"**Assistant:** ┌───\n│  Context Guardian Stats\n│\n│  Context usage: 50,000\n└───",
 		];
 		const result = compactMessages(msgs);
 		assert.ok(!result.some((m) => m.includes("Context Guardian Stats")));

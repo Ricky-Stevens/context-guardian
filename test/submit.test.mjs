@@ -11,6 +11,7 @@ let tmpDir;
 let transcriptPath;
 let cwd;
 let dataDir;
+let stateDir;
 function writeLine(obj) {
 	fs.appendFileSync(transcriptPath, `${JSON.stringify(obj)}\n`);
 }
@@ -32,6 +33,7 @@ function runHook(input) {
 			env: {
 				...process.env,
 				CLAUDE_PLUGIN_DATA: dataDir,
+				CG_STATE_DIR: stateDir,
 			},
 		});
 		return stdout ? JSON.parse(stdout) : null;
@@ -76,8 +78,10 @@ beforeEach(() => {
 	tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-submit-"));
 	cwd = path.join(tmpDir, "project");
 	dataDir = path.join(tmpDir, "data");
+	stateDir = path.join(tmpDir, "state");
 	fs.mkdirSync(cwd, { recursive: true });
 	fs.mkdirSync(dataDir, { recursive: true });
+	fs.mkdirSync(stateDir, { recursive: true });
 	transcriptPath = path.join(tmpDir, "transcript.jsonl");
 	fs.writeFileSync(
 		path.join(dataDir, "config.json"),

@@ -7,17 +7,25 @@ import { describe, it } from "node:test";
 
 const scriptPath = path.resolve(import.meta.dirname, "../lib/statusline.mjs");
 
+// Each runStatusline call gets its own isolated CG_STATE_DIR so tests don't
+// pollute ~/.claude/cg/ and don't cross-contaminate each other.
 function runStatusline(input, env) {
-	const result = spawnSync("node", [scriptPath], {
-		input: typeof input === "string" ? input : JSON.stringify(input),
-		encoding: "utf8",
-		env: {
-			...process.env,
-			CLAUDE_PLUGIN_DATA: "/tmp/cg-statusline-test-nonexistent",
-			...env,
-		},
-	});
-	return result.stdout;
+	const isolatedStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-"));
+	try {
+		const result = spawnSync("node", [scriptPath], {
+			input: typeof input === "string" ? input : JSON.stringify(input),
+			encoding: "utf8",
+			env: {
+				...process.env,
+				CLAUDE_PLUGIN_DATA: "/tmp/cg-statusline-test-nonexistent",
+				CG_STATE_DIR: isolatedStateDir,
+				...env,
+			},
+		});
+		return result.stdout;
+	} finally {
+		fs.rmSync(isolatedStateDir, { recursive: true, force: true });
+	}
 }
 
 function runWithThreshold(input, threshold) {
@@ -32,18 +40,31 @@ function runWithThreshold(input, threshold) {
 }
 
 function runWithPayload(input, payloadBytes) {
-	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-"));
+	// State dir holds the state file the statusline reads back.
+	// CLAUDE_PLUGIN_DATA holds config.json. They're separate dirs now that
+	// the statusline reads state from CG_STATE_DIR (matching production).
+	const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-state-"));
+	const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-cfg-"));
 	fs.writeFileSync(
-		path.join(tmpDir, "config.json"),
+		path.join(cfgDir, "config.json"),
 		JSON.stringify({ threshold: 0.35 }),
 	);
 	fs.writeFileSync(
-		path.join(tmpDir, "state-test.json"),
+		path.join(stateDir, "state-test.json"),
 		JSON.stringify({ payload_bytes: payloadBytes, ts: Date.now() }),
 	);
-	const out = runStatusline(input, { CLAUDE_PLUGIN_DATA: tmpDir });
-	fs.rmSync(tmpDir, { recursive: true, force: true });
-	return out;
+	const result = spawnSync("node", [scriptPath], {
+		input: JSON.stringify(input),
+		encoding: "utf8",
+		env: {
+			...process.env,
+			CLAUDE_PLUGIN_DATA: cfgDir,
+			CG_STATE_DIR: stateDir,
+		},
+	});
+	fs.rmSync(stateDir, { recursive: true, force: true });
+	fs.rmSync(cfgDir, { recursive: true, force: true });
+	return result.stdout;
 }
 
 // Strip ANSI escape codes for content-only assertions
@@ -218,76 +239,190 @@ describe("session size display", () => {
 		assert.ok(!out.includes("Session size:"));
 		assert.ok(out.includes("--"));
 	});
+
+	it("uses session_id to pick the correct state file when multiple exist", () => {
+		// Reproduces the bug where readSessionSize picked the newest file by mtime
+		// across ALL sessions, returning another session's payload data (or worse,
+		// a metadata stub with no payload → clamped to 0.1MB).
+		const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-multi-"));
+		try {
+			// Older file: the session we ARE rendering for, with real payload data
+			const ourState = path.join(stateDir, "state-our-session.json");
+			fs.writeFileSync(
+				ourState,
+				JSON.stringify({
+					payload_bytes: 5 * 1024 * 1024,
+					baseline_overhead: 0,
+				}),
+			);
+			// Pause to ensure mtime differs
+			const past = Date.now() - 60000;
+			fs.utimesSync(ourState, past / 1000, past / 1000);
+
+			// Newer file: a different concurrent session with no payload (just the
+			// metadata stub written by persistSessionMetadata on first render)
+			fs.writeFileSync(
+				path.join(stateDir, "state-other-session.json"),
+				JSON.stringify({
+					context_window_size: 1000000,
+					cc_model_id: "claude-opus-4-7[1m]",
+				}),
+			);
+
+			const out = strip(
+				runStatusline(
+					{
+						session_id: "our-session",
+						context_window: { used_percentage: 10 },
+					},
+					{ CG_STATE_DIR: stateDir },
+				),
+			);
+			assert.ok(
+				out.includes("5.0/20MB"),
+				`expected our session's 5MB payload, got: ${out}`,
+			);
+		} finally {
+			fs.rmSync(stateDir, { recursive: true, force: true });
+		}
+	});
+
+	it("returns 0 when current session has no state file yet", () => {
+		// Brand-new session: hook hasn't fired yet, only stale state from other
+		// sessions exists. We must NOT borrow another session's payload data.
+		const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-fresh-"));
+		try {
+			fs.writeFileSync(
+				path.join(stateDir, "state-some-other.json"),
+				JSON.stringify({ payload_bytes: 8 * 1024 * 1024 }),
+			);
+			const out = strip(
+				runStatusline(
+					{
+						session_id: "fresh-session",
+						context_window: { used_percentage: 10 },
+					},
+					{ CG_STATE_DIR: stateDir },
+				),
+			);
+			assert.ok(
+				!out.includes("Session size:"),
+				`fresh session should not borrow other session's data, got: ${out}`,
+			);
+			assert.ok(out.includes("--"));
+		} finally {
+			fs.rmSync(stateDir, { recursive: true, force: true });
+		}
+	});
+
+	it("ignores CLAUDE_PLUGIN_DATA when reading session state", () => {
+		// Production setup: hooks write a copy to STATUSLINE_STATE_DIR (~/.claude/cg/
+		// or CG_STATE_DIR override). A dev override that sets CLAUDE_PLUGIN_DATA on
+		// the statusline must NOT redirect state-file reads — that's what broke the
+		// session-size readout under user.settings.json overrides.
+		const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-prod-"));
+		const wrongDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-wrong-"));
+		try {
+			// Real state lives in CG_STATE_DIR
+			fs.writeFileSync(
+				path.join(stateDir, "state-prod.json"),
+				JSON.stringify({ payload_bytes: 7 * 1024 * 1024 }),
+			);
+			// CLAUDE_PLUGIN_DATA points elsewhere — must be ignored for state reads
+			fs.writeFileSync(
+				path.join(wrongDir, "state-prod.json"),
+				JSON.stringify({ payload_bytes: 1 * 1024 * 1024 }),
+			);
+			const out = strip(
+				runStatusline(
+					{
+						session_id: "prod",
+						context_window: { used_percentage: 10 },
+					},
+					{ CG_STATE_DIR: stateDir, CLAUDE_PLUGIN_DATA: wrongDir },
+				),
+			);
+			assert.ok(
+				out.includes("7.0/20MB"),
+				`expected CG_STATE_DIR's 7MB, got: ${out}`,
+			);
+		} finally {
+			fs.rmSync(stateDir, { recursive: true, force: true });
+			fs.rmSync(wrongDir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("context window size persistence", () => {
-	const stateDir = path.join(os.homedir(), ".claude", "cg");
-
 	it("writes context_window_size into per-session state file", () => {
+		const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-pers-"));
 		const sessionId = `sl-test-${Date.now()}`;
 		const stateFile = path.join(stateDir, `state-${sessionId}.json`);
 		try {
-			runStatusline({
-				session_id: sessionId,
-				context_window: {
-					used_percentage: 10,
-					context_window_size: 1000000,
+			runStatusline(
+				{
+					session_id: sessionId,
+					context_window: {
+						used_percentage: 10,
+						context_window_size: 1000000,
+					},
 				},
-			});
+				{ CG_STATE_DIR: stateDir },
+			);
 
 			assert.ok(fs.existsSync(stateFile), "state file should exist");
 			const data = JSON.parse(fs.readFileSync(stateFile, "utf8"));
 			assert.equal(data.context_window_size, 1000000);
 		} finally {
-			try {
-				fs.unlinkSync(stateFile);
-			} catch {}
+			fs.rmSync(stateDir, { recursive: true, force: true });
 		}
 	});
 
 	it("merges context_window_size into existing state file", () => {
+		const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-merge-"));
 		const sessionId = `sl-test-${Date.now()}`;
 		const stateFile = path.join(stateDir, `state-${sessionId}.json`);
 		try {
-			// Pre-populate state file (as a hook would)
-			fs.mkdirSync(stateDir, { recursive: true });
 			fs.writeFileSync(
 				stateFile,
 				JSON.stringify({ current_tokens: 5000, max_tokens: 200000 }),
 			);
 
-			runStatusline({
-				session_id: sessionId,
-				context_window: {
-					used_percentage: 10,
-					context_window_size: 1000000,
+			runStatusline(
+				{
+					session_id: sessionId,
+					context_window: {
+						used_percentage: 10,
+						context_window_size: 1000000,
+					},
 				},
-			});
+				{ CG_STATE_DIR: stateDir },
+			);
 
 			const data = JSON.parse(fs.readFileSync(stateFile, "utf8"));
 			assert.equal(data.context_window_size, 1000000);
 			assert.equal(data.current_tokens, 5000); // preserved
 		} finally {
-			try {
-				fs.unlinkSync(stateFile);
-			} catch {}
+			fs.rmSync(stateDir, { recursive: true, force: true });
 		}
 	});
 
 	it("does not write when context_window_size is missing", () => {
+		const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-sl-nowrite-"));
 		const sessionId = `sl-test-nowrite-${Date.now()}`;
 		const stateFile = path.join(stateDir, `state-${sessionId}.json`);
 		try {
-			runStatusline({
-				session_id: sessionId,
-				context_window: { used_percentage: 10 },
-			});
+			runStatusline(
+				{
+					session_id: sessionId,
+					context_window: { used_percentage: 10 },
+				},
+				{ CG_STATE_DIR: stateDir },
+			);
 
 			assert.equal(fs.existsSync(stateFile), false);
 		} finally {
-			try {
-				fs.unlinkSync(stateFile);
-			} catch {}
+			fs.rmSync(stateDir, { recursive: true, force: true });
 		}
 	});
 
