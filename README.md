@@ -1,7 +1,7 @@
 # Context Guardian
 
 [![CI](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-2.2.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
+[![Version](https://img.shields.io/badge/version-2.3.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
