@@ -15,6 +15,7 @@ import {
 	persistSessionMetadata,
 	readSessionSize,
 	render,
+	renderStatusline,
 	resolveThreshold,
 } from "../lib/statusline.mjs";
 
@@ -77,6 +78,44 @@ describe("readSessionSize (unit)", () => {
 
 	it("returns 0 in fallback mode when dir has no state files", () => {
 		assert.equal(readSessionSize(tmpDir), 0);
+	});
+});
+
+describe("renderStatusline (unit)", () => {
+	it("renders a status line from a valid JSON payload", () => {
+		const out = strip(
+			renderStatusline(
+				JSON.stringify({
+					session_id: "rs1",
+					transcript_path: path.join(tmpDir, "missing.jsonl"),
+					context_window_size: 1000000,
+				}),
+			),
+		);
+		assert.ok(out.includes("Context usage:"), `unexpected output: ${out}`);
+	});
+
+	it("persists session metadata as a side effect", () => {
+		renderStatusline(
+			JSON.stringify({
+				session_id: "rs2",
+				transcript_path: path.join(tmpDir, "missing.jsonl"),
+				model: { id: "claude-opus-4-8" },
+				context_window_size: 1000000,
+			}),
+		);
+		assert.ok(
+			fs.existsSync(path.join(tmpDir, "state-rs2.json")),
+			"should write the per-session state file",
+		);
+	});
+
+	it("returns the fallback marker on malformed JSON", () => {
+		assert.equal(renderStatusline("not json{{{"), "Context: --");
+	});
+
+	it("returns the fallback marker on empty input", () => {
+		assert.equal(renderStatusline(""), "Context: --");
 	});
 });
 

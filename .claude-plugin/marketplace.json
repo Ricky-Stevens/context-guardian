@@ -9,7 +9,7 @@
 			"name": "cg",
 			"source": "./",
 			"description": "Automatic context window monitoring and smart compaction for Claude Code",
-			"version": "2.3.1",
+			"version": "2.3.2",
 			"author": {
 				"name": "Ricky"
 			},
