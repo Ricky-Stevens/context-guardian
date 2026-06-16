@@ -78,6 +78,17 @@ describe("writeSyntheticSession", () => {
 			assistantMsg.message.content[0].text.includes("Context restored"),
 		);
 		assert.equal(assistantMsg.message.stop_reason, "end_turn");
+		// message.model must be present and non-empty — CC's /resume reconstruction
+		// runs a model-family classifier over it and crashes on undefined.
+		assert.equal(
+			typeof assistantMsg.message.model,
+			"string",
+			"assistant message must carry a model id",
+		);
+		assert.ok(
+			assistantMsg.message.model.length > 0,
+			"model id must be non-empty",
+		);
 		assert.equal(assistantMsg.parentUuid, userMsg.uuid);
 		assert.equal(assistantMsg.sessionId, sessionUuid);
 		assert.equal(assistantMsg.cwd, projectCwd);
@@ -86,6 +97,42 @@ describe("writeSyntheticSession", () => {
 		assert.equal(titleEntry.type, "custom-title");
 		assert.equal(titleEntry.customTitle, "cg");
 		assert.equal(titleEntry.sessionId, sessionUuid);
+	});
+
+	it("uses the provided model id and strips a context-window suffix", async () => {
+		const { writeSyntheticSession } = await loadModule();
+		const { jsonlPath } = writeSyntheticSession({
+			checkpointContent: "test",
+			title: "cg",
+			projectCwd,
+			model: "claude-opus-4-8[1m]",
+		});
+
+		const assistantMsg = JSON.parse(
+			fs.readFileSync(jsonlPath, "utf8").trim().split("\n")[1],
+		);
+		assert.equal(
+			assistantMsg.message.model,
+			"claude-opus-4-8",
+			"should strip the [1m] suffix to match real CC message.model",
+		);
+	});
+
+	it("falls back to a valid model id when none is provided", async () => {
+		const { writeSyntheticSession } = await loadModule();
+		const { jsonlPath } = writeSyntheticSession({
+			checkpointContent: "test",
+			title: "cg",
+			projectCwd,
+		});
+
+		const assistantMsg = JSON.parse(
+			fs.readFileSync(jsonlPath, "utf8").trim().split("\n")[1],
+		);
+		assert.ok(
+			assistantMsg.message.model.startsWith("claude-"),
+			"fallback model id should be a real claude id",
+		);
 	});
 
 	it("writes to the correct sessions directory based on projectCwd", async () => {
