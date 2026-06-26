@@ -168,6 +168,62 @@ describe("smart compaction", () => {
 });
 
 // ===========================================================================
+// Synthetic session placement (cwd-drift regression)
+// ===========================================================================
+
+describe("synthetic session placement", () => {
+	it("writes the synthetic session next to the transcript, not in cwd", () => {
+		// Regression for `/resume cg:NNNN not found`: when the agent has `cd`'d
+		// into a subdir, the CLI's process.cwd() no longer matches the dir CC
+		// keeps the session in. The synthetic must land in the transcript's own
+		// directory (where CC's /resume searches), derived from transcript_path.
+		const sessionDir = path.join(tmpDir, "real-session-dir");
+		fs.mkdirSync(sessionDir, { recursive: true });
+		const tPath = path.join(sessionDir, "session.jsonl");
+		transcriptPath = tPath; // writeLine appends to the module-level path
+		fs.writeFileSync(tPath, "");
+		writeLine(makeUser("Refactor the parser into smaller functions"));
+		writeLine(
+			makeAssistant("Parser refactored. Extracted tokenize() and parse()."),
+		);
+		writeLine(makeUser("Apply it"));
+		writeLine(makeAssistant("Applied the parser refactor across the module."));
+
+		fs.writeFileSync(
+			path.join(dataDir, "state-place1.json"),
+			// cwd here is the project root; the CLI runs from tmpDir (drifted).
+			JSON.stringify({ transcript_path: tPath, cwd: sessionDir }),
+		);
+
+		const result = runCli(["smart", "place1", dataDir]);
+		assert.equal(result.success, true);
+		const m = result.resumeInstruction.match(/cg:[0-9a-f]{4}/);
+		assert.ok(m, "should advertise a /resume cg:hash title");
+
+		// The synthetic .jsonl must be created in the transcript's own dir.
+		const synthetics = fs
+			.readdirSync(sessionDir)
+			.filter((f) => f.endsWith(".jsonl") && f !== "session.jsonl");
+		assert.equal(
+			synthetics.length,
+			1,
+			"exactly one synthetic session beside the transcript",
+		);
+
+		// Its custom title must match the advertised /resume hint so the user's
+		// /resume cg:NNNN actually resolves.
+		const content = fs.readFileSync(
+			path.join(sessionDir, synthetics[0]),
+			"utf8",
+		);
+		assert.ok(
+			content.includes(`"customTitle":"${m[0]}"`),
+			"synthetic title must match the advertised resume hint",
+		);
+	});
+});
+
+// ===========================================================================
 // Recent compaction
 // ===========================================================================
 

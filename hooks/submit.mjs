@@ -29,7 +29,7 @@ try {
 	process.stderr.write(`cg: failed to parse stdin: ${e.message}\n`);
 	process.exit(0);
 }
-const { session_id = "unknown", transcript_path } = input;
+const { session_id = "unknown", transcript_path, cwd } = input;
 
 // ---------------------------------------------------------------------------
 // Token usage check — write state for statusline and /cg:stats
@@ -50,13 +50,15 @@ const currentTokens = realUsage
 	: estimateTokens(transcript_path);
 const source = realUsage ? "real" : "estimated";
 
-// Read previous state for baseline overhead.
+// Read previous state for baseline overhead and last-known cwd.
 let baselineOverhead = 0;
+let prevCwd;
 try {
 	const sf = stateFile(session_id);
 	if (fs.existsSync(sf)) {
 		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
 		baselineOverhead = prev.baseline_overhead ?? 0;
+		prevCwd = prev.cwd;
 	}
 } catch (e) {
 	log(`state-read-error session=${session_id}: ${e.message}`);
@@ -118,6 +120,10 @@ try {
 		payload_bytes: payloadBytes,
 		session_id,
 		transcript_path,
+		// CC's authoritative project cwd. Compaction/handoff use this (not
+		// process.cwd()) to place the synthetic /resume session in the dir CC
+		// actually searches. Preserve any prior value if this hook lacks it.
+		cwd: cwd || prevCwd,
 		ts: Date.now(),
 	};
 	const stateJson = JSON.stringify(stateObj);

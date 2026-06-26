@@ -1,6 +1,6 @@
 {
 	"name": "cg",
-	"version": "2.3.2",
+	"version": "2.3.3",
 	"description": "Automatic context window monitoring and smart compaction for Claude Code",
 	"author": {
 		"name": "Ricky Stevens",

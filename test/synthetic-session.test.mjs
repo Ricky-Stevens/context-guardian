@@ -158,6 +158,29 @@ describe("writeSyntheticSession", () => {
 		assert.ok(jsonlPath.endsWith(".jsonl"));
 	});
 
+	it("honors an explicit sessionsDir over projectCwd", async () => {
+		// Regression: a Bash `cd` into a subdir drifts process.cwd() (and thus
+		// projectCwd) away from where CC keeps the session. The caller derives
+		// the real dir from transcript_path and passes it as sessionsDir — the
+		// synthetic must land there, NOT in sanitizeCwd(projectCwd).
+		const { writeSyntheticSession } = await loadModule();
+		const explicitDir = path.join(tmpDir, "real-session-dir");
+		const { jsonlPath } = writeSyntheticSession({
+			checkpointContent: "test",
+			title: "cg:1234",
+			type: "compact",
+			projectCwd: path.join(projectCwd, "some", "drifted", "subdir"),
+			sessionsDir: explicitDir,
+		});
+
+		assert.equal(
+			path.dirname(jsonlPath),
+			explicitDir,
+			"synthetic must be written to the explicit sessionsDir",
+		);
+		assert.ok(fs.existsSync(jsonlPath));
+	});
+
 	it("uses the session UUID in the filename", async () => {
 		const { writeSyntheticSession } = await loadModule();
 		const { sessionUuid, jsonlPath } = writeSyntheticSession({
@@ -307,6 +330,51 @@ describe("previous session cleanup", () => {
 			fs.existsSync(second.jsonlPath),
 			"new compact JSONL should exist",
 		);
+	});
+
+	it("compact does not delete a compact synthetic in another project dir", async () => {
+		// Regression: the manifest is global across all projects. A compact in
+		// project B must NOT delete project A's compact synthetic — A belongs to
+		// a concurrent session that may still want to resume it.
+		const { writeSyntheticSession } = await loadModule();
+		const dirA = path.join(tmpDir, "project-a-sessions");
+		const dirB = path.join(tmpDir, "project-b-sessions");
+
+		const a = writeSyntheticSession({
+			checkpointContent: "project A checkpoint",
+			title: "cg:aaaa",
+			type: "compact",
+			projectCwd,
+			sessionsDir: dirA,
+		});
+		const b = writeSyntheticSession({
+			checkpointContent: "project B checkpoint",
+			title: "cg:bbbb",
+			type: "compact",
+			projectCwd,
+			sessionsDir: dirB,
+		});
+
+		assert.ok(
+			fs.existsSync(a.jsonlPath),
+			"project A's compact synthetic must survive a compact in project B",
+		);
+		assert.ok(fs.existsSync(b.jsonlPath), "project B's synthetic should exist");
+
+		// A second compact in dir A still cleans dir A's own prior synthetic.
+		const a2 = writeSyntheticSession({
+			checkpointContent: "project A checkpoint 2",
+			title: "cg:cccc",
+			type: "compact",
+			projectCwd,
+			sessionsDir: dirA,
+		});
+		assert.ok(
+			!fs.existsSync(a.jsonlPath),
+			"same-dir compact should clean the prior same-dir synthetic",
+		);
+		assert.ok(fs.existsSync(a2.jsonlPath));
+		assert.ok(fs.existsSync(b.jsonlPath), "dir B still untouched");
 	});
 
 	it("compact does not delete handoff JSONL", async () => {

@@ -25,7 +25,7 @@ try {
 	process.exit(0);
 }
 
-const { session_id = "unknown", transcript_path } = input;
+const { session_id = "unknown", transcript_path, cwd } = input;
 log(`STOP session=${session_id}`);
 
 if (!transcript_path || !fs.existsSync(transcript_path)) process.exit(0);
@@ -60,12 +60,14 @@ if (source === "estimated") {
 // Read previous state for carry-forward values.
 let baselineOverhead = 0;
 let baselineResponseCount = 0;
+let prevCwd;
 try {
 	const sf = stateFile(session_id);
 	if (fs.existsSync(sf)) {
 		const prev = JSON.parse(fs.readFileSync(sf, "utf8"));
 		baselineOverhead = prev.baseline_overhead ?? 0;
 		baselineResponseCount = prev.baseline_response_count ?? 0;
+		prevCwd = prev.cwd;
 	}
 } catch (e) {
 	log(`state-read-error session=${session_id}: ${e.message}`);
@@ -135,6 +137,9 @@ try {
 		payload_bytes: payloadBytes,
 		session_id,
 		transcript_path,
+		// CC's authoritative project cwd (see submit hook). Used by
+		// compaction/handoff to place the synthetic /resume session correctly.
+		cwd: cwd || prevCwd,
 		ts: Date.now(),
 	});
 	atomicWriteFileSync(stateFile(session_id), stateJson);
