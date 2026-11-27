@@ -210,13 +210,30 @@ describe("statusline check — external mode", () => {
 	}
 
 	it("passes when CG's statusline script ran for the session", () => {
-		const check = runExternal({ cc_model_id: "claude-test" });
+		const check = runExternal({
+			cc_model_id: "claude-test",
+			context_window_size: 1000000,
+		});
 		assert.equal(check.ok, true);
 		assert.match(check.detail, /^External/);
 	});
 
+	it("passes after a hook rewrote the state file without cc_model_id", () => {
+		// submit.mjs and stop.mjs rewrite the file on every turn: they carry
+		// context_window_size forward and drop cc_model_id.
+		const check = runExternal({
+			current_tokens: 10,
+			context_window_size: 1000000,
+			model: "claude-test",
+		});
+		assert.equal(check.ok, true);
+	});
+
 	it("fails with the launcher command when the script never ran", () => {
-		const check = runExternal({ current_tokens: 10 });
+		const check = runExternal({
+			current_tokens: 10,
+			context_window_size: null,
+		});
 		assert.equal(check.ok, false);
 		assert.match(check.detail, /node .*cg-state\/statusline\.mjs/);
 	});
@@ -227,7 +244,10 @@ describe("statusline check — external mode", () => {
 	});
 
 	it("ignores another session's state file when the session id is known", () => {
-		const check = runExternal({ cc_model_id: "claude-test" }, "other-session");
+		const check = runExternal(
+			{ context_window_size: 1000000 },
+			"other-session",
+		);
 		assert.equal(check.ok, false);
 	});
 });

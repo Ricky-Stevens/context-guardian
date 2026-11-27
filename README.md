@@ -278,7 +278,7 @@ In green/yellow states, labels are dim/grey with only the numbers colored. At re
 
 **Session size** tracks the estimated API request payload — transcript file size plus system overhead (prompts, tools, CLAUDE.md). The ~20MB API payload limit is separate from the token context window and can lock you out of a session entirely.
 
-The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`.
+The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`. The notice names `/cg:config statusline external`, which stops the reclaim.
 
 #### Using another status line tool
 

@@ -178,7 +178,7 @@ if (statuslineReclaimed) {
 			hookSpecificOutput: {
 				hookEventName: "SessionStart",
 				additionalContext:
-					"[Context Guardian] Statusline reclaimed — another tool had overwritten it. Takes effect next session.",
+					"[Context Guardian] Statusline reclaimed — another tool had overwritten it. Takes effect next session. To run CG inside another status line tool instead, run /cg:config statusline external and set that tool up again.",
 			},
 		}),
 	);
