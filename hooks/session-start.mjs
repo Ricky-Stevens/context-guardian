@@ -150,7 +150,25 @@ try {
 
 	if (statuslineMode() === "external") {
 		log("statusline-external: leaving statusLine in settings.json unchanged");
-		statuslineMissing = !settings.statusLine?.command;
+		// Claude Code also reads statusLine from the project's shared and local
+		// settings, so the warning fires only when none of the three sets one.
+		const projectSettings = input.cwd
+			? [
+					path.join(input.cwd, ".claude", "settings.json"),
+					path.join(input.cwd, ".claude", "settings.local.json"),
+				]
+			: [];
+		statuslineMissing =
+			!settings.statusLine?.command &&
+			!projectSettings.some((file) => {
+				try {
+					return Boolean(
+						JSON.parse(fs.readFileSync(file, "utf8")).statusLine?.command,
+					);
+				} catch {
+					return false;
+				}
+			});
 	} else if (!settings.statusLine) {
 		// No statusline configured — set ours
 		settings.statusLine = { type: "command", command: statuslineCmd };

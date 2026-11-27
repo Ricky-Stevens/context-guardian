@@ -250,4 +250,77 @@ describe("statusline check — external mode", () => {
 		);
 		assert.equal(check.ok, false);
 	});
+
+	it("does not pass without a session id, even if some session's script ran", () => {
+		const stateDir = path.join(tmpDir, "cg-state");
+		fs.mkdirSync(stateDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(dataDir, "config.json"),
+			JSON.stringify({ statusline: "external" }),
+		);
+		fs.writeFileSync(
+			path.join(stateDir, "state-any-session.json"),
+			JSON.stringify({ context_window_size: 1000000 }),
+		);
+		const result = runDiag([], {
+			CG_STATE_DIR: stateDir,
+			CLAUDE_SESSION_ID: "",
+		});
+		const check = result.checks.find((c) => c.name === "statusline");
+		assert.equal(check.ok, false);
+		assert.match(check.detail, /no session id/);
+	});
+});
+
+// ===========================================================================
+// statusline check — which config.json sets the mode
+// ===========================================================================
+
+describe("statusline check — mode lookup", () => {
+	function setupHome(dataDirs) {
+		const home = path.join(tmpDir, "home");
+		for (const [name, cfg] of Object.entries(dataDirs)) {
+			const dir = path.join(home, ".claude", "plugins", "data", name);
+			fs.mkdirSync(dir, { recursive: true });
+			fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify(cfg));
+		}
+		const stateDir = path.join(tmpDir, "cg-state");
+		fs.mkdirSync(stateDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(stateDir, "state-ext-session.json"),
+			JSON.stringify({ context_window_size: 1000000 }),
+		);
+		return { home, stateDir };
+	}
+
+	it("uses only the plugin data dir the hooks use when it is given", () => {
+		fs.writeFileSync(
+			path.join(dataDir, "config.json"),
+			JSON.stringify({ threshold: 0.5 }),
+		);
+		const { home, stateDir } = setupHome({
+			"cg-other": { statusline: "external" },
+		});
+		const result = runDiag(["ext-session"], {
+			HOME: home,
+			CG_STATE_DIR: stateDir,
+		});
+		const check = result.checks.find((c) => c.name === "statusline");
+		assert.doesNotMatch(check.detail, /External/);
+	});
+
+	it("skips config files without the key when the data dir is unknown", () => {
+		const { home, stateDir } = setupHome({
+			"cg-a": { threshold: 0.5 },
+			"cg-b": { statusline: "external" },
+		});
+		const result = runDiag(["ext-session"], {
+			HOME: home,
+			CG_STATE_DIR: stateDir,
+			CLAUDE_PLUGIN_DATA: "",
+		});
+		const check = result.checks.find((c) => c.name === "statusline");
+		assert.equal(check.ok, true);
+		assert.match(check.detail, /^External/);
+	});
 });

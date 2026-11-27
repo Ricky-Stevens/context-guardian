@@ -18,14 +18,23 @@ let home;
 let dataDir;
 let stateDir;
 let settingsPath;
+let projectDir;
 
 beforeEach(() => {
 	home = fs.mkdtempSync(path.join(os.tmpdir(), "cg-session-start-"));
 	dataDir = path.join(home, "data");
 	stateDir = path.join(home, ".claude", "cg");
 	settingsPath = path.join(home, ".claude", "settings.json");
+	projectDir = path.join(home, "project");
 	fs.mkdirSync(dataDir, { recursive: true });
+	fs.mkdirSync(projectDir, { recursive: true });
 });
+
+function writeProjectSettings(fileName, settings) {
+	const file = path.join(projectDir, ".claude", fileName);
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+}
 
 afterEach(() => {
 	fs.rmSync(home, { recursive: true, force: true });
@@ -51,7 +60,7 @@ function runHook(pluginRoot = PLUGIN_ROOT) {
 	return execFileSync("node", [HOOK_PATH], {
 		encoding: "utf8",
 		timeout: 10000,
-		input: JSON.stringify({ session_id: "test-session", cwd: home }),
+		input: JSON.stringify({ session_id: "test-session", cwd: projectDir }),
 		env: {
 			...process.env,
 			HOME: home,
@@ -120,6 +129,15 @@ describe("session-start statusline — external mode", () => {
 		const stdout = runHook();
 		assert.match(stdout, /no status line command is set/);
 	});
+
+	for (const fileName of ["settings.json", "settings.local.json"]) {
+		it(`does not warn when the project's ${fileName} sets the status line`, () => {
+			setMode("external");
+			writeSettings({});
+			writeProjectSettings(fileName, { statusLine: FOREIGN });
+			assert.equal(runHook(), "");
+		});
+	}
 });
 
 describe("session-start statusline launcher", () => {
