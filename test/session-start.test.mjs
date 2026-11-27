@@ -138,6 +138,22 @@ describe("session-start statusline — external mode", () => {
 			assert.equal(runHook(), "");
 		});
 	}
+
+	it("still warns when the project's statusLine has no command", () => {
+		setMode("external");
+		writeSettings({});
+		writeProjectSettings("settings.json", { statusLine: { type: "command" } });
+		assert.match(runHook(), /no status line command is set/);
+	});
+
+	it("still warns when the project's settings file is not valid JSON", () => {
+		setMode("external");
+		writeSettings({});
+		const file = path.join(projectDir, ".claude", "settings.local.json");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, "{ not json");
+		assert.match(runHook(), /no status line command is set/);
+	});
 });
 
 describe("session-start statusline launcher", () => {

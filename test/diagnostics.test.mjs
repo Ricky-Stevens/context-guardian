@@ -323,4 +323,18 @@ describe("statusline check — mode lookup", () => {
 		assert.equal(check.ok, true);
 		assert.match(check.detail, /^External/);
 	});
+
+	it("scans the data dirs when the given data dir does not exist", () => {
+		const { home, stateDir } = setupHome({
+			"cg-b": { statusline: "external" },
+		});
+		const result = runDiag(["ext-session"], {
+			HOME: home,
+			CG_STATE_DIR: stateDir,
+			CLAUDE_PLUGIN_DATA: path.join(tmpDir, "unexpanded-or-shifted-arg"),
+		});
+		const check = result.checks.find((c) => c.name === "statusline");
+		assert.equal(check.ok, true);
+		assert.match(check.detail, /^External/);
+	});
 });
