@@ -192,7 +192,7 @@ describe("exit behaviour", () => {
 // ===========================================================================
 
 describe("statusline check — external mode", () => {
-	function runExternal(state) {
+	function runExternal(state, stateSession = "ext-session") {
 		const stateDir = path.join(tmpDir, "cg-state");
 		fs.mkdirSync(stateDir, { recursive: true });
 		fs.writeFileSync(
@@ -201,7 +201,7 @@ describe("statusline check — external mode", () => {
 		);
 		if (state) {
 			fs.writeFileSync(
-				path.join(stateDir, "state-ext-session.json"),
+				path.join(stateDir, `state-${stateSession}.json`),
 				JSON.stringify(state),
 			);
 		}
@@ -223,6 +223,11 @@ describe("statusline check — external mode", () => {
 
 	it("fails when there is no state file at all", () => {
 		const check = runExternal(null);
+		assert.equal(check.ok, false);
+	});
+
+	it("ignores another session's state file when the session id is known", () => {
+		const check = runExternal({ cc_model_id: "claude-test" }, "other-session");
 		assert.equal(check.ok, false);
 	});
 });

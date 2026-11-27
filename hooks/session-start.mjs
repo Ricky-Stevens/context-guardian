@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { statuslineMode } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
@@ -94,7 +94,8 @@ try {
 }
 
 const pluginRoot =
-	process.env.CLAUDE_PLUGIN_ROOT || path.resolve(import.meta.dirname, "..");
+	process.env.CLAUDE_PLUGIN_ROOT ||
+	path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // ---------------------------------------------------------------------------
 // Stable statusline launcher — ~/.claude/cg/statusline.mjs imports the current
@@ -105,7 +106,17 @@ const pluginRoot =
 try {
 	const launcher = statuslineLauncherFile();
 	const target = pathToFileURL(path.join(pluginRoot, "lib", "statusline.mjs"));
-	const content = `// Written by Context Guardian at session start. Do not edit.\nimport ${JSON.stringify(target.href)};\n`;
+	// The target can disappear (plugin uninstalled, a --plugin-dir copy deleted),
+	// so the launcher prints a hint instead of failing with an empty widget.
+	const content = [
+		"// Written by Context Guardian at session start. Do not edit.",
+		"try {",
+		`\tawait import(${JSON.stringify(target.href)});`,
+		"} catch {",
+		'\tprocess.stdout.write("Context Guardian: statusline launcher is out of date, start a new session");',
+		"}",
+		"",
+	].join("\n");
 	let current = null;
 	try {
 		current = fs.readFileSync(launcher, "utf8");

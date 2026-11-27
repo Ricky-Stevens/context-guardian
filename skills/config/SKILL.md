@@ -63,7 +63,7 @@ Parse `$ARGUMENTS` as `<key> <value>`.
 
 **statusline**: Must be `managed` or `external`. Any other value: show an error: "statusline must be managed or external." After setting `external`, add one line to the confirmation: "Make your status line tool run `node ~/.claude/cg/statusline.mjs`. Context Guardian no longer manages statusLine in settings.json."
 
-**reset**: No value needed. Write `{"threshold": 0.35, "max_tokens": 200000}` to the config file. The statusline mode returns to `managed`.
+**reset**: No value needed. Write `{"threshold": 0.35, "max_tokens": 200000}` to the config file. If the existing config has a `statusline` key, keep it in the written file: reset restores the token settings only, and dropping `external` would make the next session start overwrite the user's status line tool.
 
 For threshold/max_tokens/statusline: Read the existing config (or use defaults if missing), update the key, write back with `JSON.stringify(cfg, null, 2)`.
 

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { pathToFileURL } from "node:url";
 
 // session-start.mjs is a hook script. We test it by spawning it with a
 // temporary HOME so it never touches the real ~/.claude/settings.json.
@@ -120,10 +121,22 @@ describe("session-start statusline launcher", () => {
 		runHook();
 		const content = fs.readFileSync(launcher(), "utf8");
 		assert.match(content, /^\/\/ Written by Context Guardian/);
-		assert.ok(
-			content.includes(`file://${PLUGIN_ROOT}/lib/statusline.mjs`),
-			content,
+		const target = pathToFileURL(
+			path.join(PLUGIN_ROOT, "lib", "statusline.mjs"),
 		);
+		assert.ok(content.includes(JSON.stringify(target.href)), content);
+	});
+
+	it("prints a hint instead of failing when the target is gone", () => {
+		writeSettings({});
+		runHook(path.join(home, "deleted-plugin-copy"));
+		const out = execFileSync("node", [launcher()], {
+			encoding: "utf8",
+			timeout: 10000,
+			input: "{}",
+			env: { ...process.env, HOME: home, CG_STATE_DIR: stateDir },
+		});
+		assert.match(out, /launcher is out of date/);
 	});
 
 	it("renders the statusline and records session metadata when run", () => {
