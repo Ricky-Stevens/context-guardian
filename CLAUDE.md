@@ -39,6 +39,8 @@ Context usage: 3% | Session size: 0.4/20MB | /cg:stats for more
 
 At threshold, the trailing hint changes to: `compaction recommended — /cg:compact`
 
+**Statusline mode** (`statusline` in config.json): `managed` (default) or `external`. In external mode, session-start never writes `statusLine` in settings.json, because another tool (e.g. ccstatusline) runs CG's script. Session-start always writes the stable launcher `~/.claude/cg/statusline.mjs`, which imports the current version's `lib/statusline.mjs`; external tools call the launcher, not the versioned path. `statusline.mjs` is the only receiver of `context_window_size` and `model.id`, so in external mode diagnostics checks the session state file for `cc_model_id` to prove the script ran.
+
 The session-start hook auto-configures the statusline and **reclaims it** if overwritten by another tool. The diagnostics check flags a missing CG statusline as a failure.
 
 ## How The Submit Hook Works

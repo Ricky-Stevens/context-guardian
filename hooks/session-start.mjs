@@ -2,11 +2,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { statuslineMode } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
 	atomicWriteFileSync,
 	resolveDataDir,
 	STATUSLINE_STATE_DIR,
+	statuslineLauncherFile,
 } from "../lib/paths.mjs";
 
 let input;
@@ -90,9 +93,37 @@ try {
 	log(`self-heal-error: ${e.message}`);
 }
 
+const pluginRoot =
+	process.env.CLAUDE_PLUGIN_ROOT || path.resolve(import.meta.dirname, "..");
+
+// ---------------------------------------------------------------------------
+// Stable statusline launcher — ~/.claude/cg/statusline.mjs imports the current
+// version's script, so tools that run CG's statusline (statusline: "external")
+// keep working across plugin updates. Its name ends in statusline.mjs, so the
+// script's own CLI check still runs it.
+// ---------------------------------------------------------------------------
+try {
+	const launcher = statuslineLauncherFile();
+	const target = pathToFileURL(path.join(pluginRoot, "lib", "statusline.mjs"));
+	const content = `// Written by Context Guardian at session start. Do not edit.\nimport ${JSON.stringify(target.href)};\n`;
+	let current = null;
+	try {
+		current = fs.readFileSync(launcher, "utf8");
+	} catch {}
+	if (current !== content) {
+		fs.mkdirSync(path.dirname(launcher), { recursive: true });
+		atomicWriteFileSync(launcher, content);
+		log(`statusline-launcher: wrote ${launcher} -> ${target.href}`);
+	}
+} catch (e) {
+	log(`statusline-launcher-error: ${e.message}`);
+}
+
 // ---------------------------------------------------------------------------
 // Statusline dominance — the statusline is CG's primary UX for context
-// pressure. We ensure it's always configured and reclaim it if overwritten.
+// pressure. In managed mode we ensure it's always configured and reclaim it if
+// overwritten. In external mode another tool runs CG's statusline script
+// (through the launcher above), so settings.json is left alone.
 // Takes effect next session (Claude Code reads settings at startup, before hooks).
 // ---------------------------------------------------------------------------
 let statuslineReclaimed = false;
@@ -102,12 +133,12 @@ try {
 	if (fs.existsSync(settingsPath)) {
 		settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
 	}
-	const pluginRoot =
-		process.env.CLAUDE_PLUGIN_ROOT || path.resolve(import.meta.dirname, "..");
 	const statuslineCmd = `node ${pluginRoot}/lib/statusline.mjs`;
 	const isCG = settings.statusLine?.command?.includes("statusline.mjs");
 
-	if (!settings.statusLine) {
+	if (statuslineMode() === "external") {
+		log("statusline-external: leaving statusLine in settings.json unchanged");
+	} else if (!settings.statusLine) {
 		// No statusline configured — set ours
 		settings.statusLine = { type: "command", command: statuslineCmd };
 		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });

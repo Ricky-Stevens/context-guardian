@@ -186,3 +186,43 @@ describe("exit behaviour", () => {
 		assert.ok(Array.isArray(result.checks));
 	});
 });
+
+// ===========================================================================
+// statusline check — external mode
+// ===========================================================================
+
+describe("statusline check — external mode", () => {
+	function runExternal(state) {
+		const stateDir = path.join(tmpDir, "cg-state");
+		fs.mkdirSync(stateDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(dataDir, "config.json"),
+			JSON.stringify({ statusline: "external" }),
+		);
+		if (state) {
+			fs.writeFileSync(
+				path.join(stateDir, "state-ext-session.json"),
+				JSON.stringify(state),
+			);
+		}
+		const result = runDiag(["ext-session"], { CG_STATE_DIR: stateDir });
+		return result.checks.find((c) => c.name === "statusline");
+	}
+
+	it("passes when CG's statusline script ran for the session", () => {
+		const check = runExternal({ cc_model_id: "claude-test" });
+		assert.equal(check.ok, true);
+		assert.match(check.detail, /^External/);
+	});
+
+	it("fails with the launcher command when the script never ran", () => {
+		const check = runExternal({ current_tokens: 10 });
+		assert.equal(check.ok, false);
+		assert.match(check.detail, /node .*cg-state\/statusline\.mjs/);
+	});
+
+	it("fails when there is no state file at all", () => {
+		const check = runExternal(null);
+		assert.equal(check.ok, false);
+	});
+});

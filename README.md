@@ -1,7 +1,7 @@
 # Context Guardian
 
 [![CI](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-2.3.3-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
+[![Version](https://img.shields.io/badge/version-2.4.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
@@ -77,6 +77,7 @@ Shows current token usage, session size, threshold, and recommendations.
 /cg:config                     # show current config + detected model/limit
 /cg:config threshold 0.50      # override adaptive threshold with fixed 50%
 /cg:config max_tokens 1000000  # override detected token limit
+/cg:config statusline external # another tool runs CG's statusline (see Statusline)
 /cg:config reset               # restore adaptive defaults
 ```
 
@@ -279,6 +280,15 @@ In green/yellow states, labels are dim/grey with only the numbers colored. At re
 
 The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`.
 
+#### Using another status line tool
+
+Claude Code runs one status line command. To combine Context Guardian with other segments, for example in [ccstatusline](https://github.com/sirmalloc/ccstatusline):
+
+1. Run `/cg:config statusline external`. Session start then leaves `statusLine` in `settings.json` alone.
+2. Make your tool run `node ~/.claude/cg/statusline.mjs` with Claude Code's status line JSON on stdin. In ccstatusline, that is a Custom Command widget; turn on "preserve colors" to keep CG's colors.
+
+Session start rewrites `~/.claude/cg/statusline.mjs` to point at the installed version, so the command keeps working after updates. CG's statusline script must run: it is the only part of CG that receives the real context window size and model. `/cg:stats` diagnostics report a failure in external mode when it has not run in the current session.
+
 ### Model & Token Limit Detection
 
 Context Guardian automatically detects the actual context window size and model for the current session. The detected values update immediately when you switch models via `/model`. You can override with `/cg:config max_tokens <value>` if needed.
@@ -289,7 +299,7 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 
 | File | Purpose |
 |------|---------|
-| `config.json` | Threshold and max_tokens override |
+| `config.json` | Threshold and max_tokens override, statusline mode |
 | `state-{session_id}.json` | Latest token counts, payload bytes, model, transcript path (session-scoped) |
 | `checkpoints/` | Saved compaction checkpoints (markdown) |
 | `synthetic-sessions.json` | Manifest tracking synthetic JSONL sessions for `/resume` |

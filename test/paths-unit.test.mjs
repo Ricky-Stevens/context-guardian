@@ -13,6 +13,7 @@ import {
 	resolveDataDir,
 	resolveStatuslineStateDir,
 	stateFile,
+	statuslineLauncherFile,
 	statuslineStateFile,
 } from "../lib/paths.mjs";
 
@@ -100,6 +101,13 @@ describe("statuslineStateFile", () => {
 			statuslineStateFile(),
 			path.join(tmpDir, "state-unknown.json"),
 		);
+	});
+});
+
+describe("statuslineLauncherFile", () => {
+	it("lives in the statusline state dir and ends in statusline.mjs", () => {
+		process.env.CG_STATE_DIR = tmpDir;
+		assert.equal(statuslineLauncherFile(), path.join(tmpDir, "statusline.mjs"));
 	});
 });
 

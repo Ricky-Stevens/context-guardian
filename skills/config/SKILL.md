@@ -26,6 +26,7 @@ If the state file exists and has a `model` field, display:
 │
 │  threshold:        {threshold}  (trigger warning at {threshold_display}% usage, or threshold × 100 if threshold_display is missing)
 │  max_tokens:       {max_tokens formatted with commas}  (config default)
+│  statusline:       {statusline from config, or "managed"}
 │  detected model:   {model from state file}
 │  detected limit:   {max_tokens from state file, formatted with commas} tokens
 │
@@ -34,6 +35,7 @@ If the state file exists and has a `model` field, display:
 │  Usage:
 │    /cg:config threshold 0.50
 │    /cg:config max_tokens 1000000
+│    /cg:config statusline external
 │    /cg:config reset
 │
 └─────────────────────────────────────────────────
@@ -59,9 +61,11 @@ Parse `$ARGUMENTS` as `<key> <value>`.
 
 **max_tokens**: Must be a positive integer.
 
-**reset**: No value needed. Write `{"threshold": 0.35, "max_tokens": 200000}` to the config file.
+**statusline**: Must be `managed` or `external`. Any other value: show an error: "statusline must be managed or external." After setting `external`, add one line to the confirmation: "Make your status line tool run `node ~/.claude/cg/statusline.mjs`. Context Guardian no longer manages statusLine in settings.json."
 
-For threshold/max_tokens: Read the existing config (or use defaults if missing), update the key, write back with `JSON.stringify(cfg, null, 2)`.
+**reset**: No value needed. Write `{"threshold": 0.35, "max_tokens": 200000}` to the config file. The statusline mode returns to `managed`.
+
+For threshold/max_tokens/statusline: Read the existing config (or use defaults if missing), update the key, write back with `JSON.stringify(cfg, null, 2)`.
 
 After updating, read back the file and display the config box with a confirmation line: "Config updated. Changes take effect on the next message."
 
