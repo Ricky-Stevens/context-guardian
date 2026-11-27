@@ -287,7 +287,7 @@ Claude Code runs one status line command. To combine Context Guardian with other
 1. Run `/cg:config statusline external`. Session start then leaves `statusLine` in `settings.json` alone.
 2. Make your tool run `node ~/.claude/cg/statusline.mjs` with Claude Code's status line JSON on stdin. In ccstatusline, that is a Custom Command widget; turn on "preserve colors" to keep CG's colors.
 
-Session start rewrites `~/.claude/cg/statusline.mjs` to point at the installed version, so the command keeps working after updates. CG's statusline script must run: it is the only part of CG that receives the real context window size and model. `/cg:stats` diagnostics report a failure in external mode when it has not run in the current session.
+Session start rewrites `~/.claude/cg/statusline.mjs` to point at the installed version, so the command keeps working after updates. CG's statusline script must run: it is the only part of CG that receives the real context window size and model. `/cg:stats` diagnostics report a failure in external mode when it has not run in the current session. If external mode finds no status line command at session start, CG warns in the session.
 
 ### Model & Token Limit Detection
 
