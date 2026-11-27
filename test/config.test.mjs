@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { computeAdaptiveThreshold } from "../lib/config.mjs";
+import { computeAdaptiveThreshold, statuslineMode } from "../lib/config.mjs";
+
+describe("statuslineMode", () => {
+	it("returns external only for the exact value 'external'", () => {
+		assert.equal(statuslineMode({ statusline: "external" }), "external");
+	});
+
+	it("falls back to managed for missing, unknown or mistyped values", () => {
+		for (const statusline of [undefined, "managed", "off", "External", 1]) {
+			assert.equal(statuslineMode({ statusline }), "managed");
+		}
+	});
+
+	it("reads the loaded config when called without an argument", () => {
+		assert.ok(["managed", "external"].includes(statuslineMode()));
+	});
+});
 
 describe("computeAdaptiveThreshold", () => {
 	it("returns 0.55 for 200K window", () => {

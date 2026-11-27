@@ -1,7 +1,7 @@
 # Context Guardian
 
 [![CI](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/Ricky-Stevens/context-guardian/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-2.3.3-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
+[![Version](https://img.shields.io/badge/version-2.4.0-blue)](https://github.com/Ricky-Stevens/context-guardian/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ricky-Stevens_context-guardian&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ricky-Stevens_context-guardian)
@@ -77,6 +77,7 @@ Shows current token usage, session size, threshold, and recommendations.
 /cg:config                     # show current config + detected model/limit
 /cg:config threshold 0.50      # override adaptive threshold with fixed 50%
 /cg:config max_tokens 1000000  # override detected token limit
+/cg:config statusline external # another tool runs CG's statusline (see Statusline)
 /cg:config reset               # restore adaptive defaults
 ```
 
@@ -277,7 +278,16 @@ In green/yellow states, labels are dim/grey with only the numbers colored. At re
 
 **Session size** tracks the estimated API request payload — transcript file size plus system overhead (prompts, tools, CLAUDE.md). The ~20MB API payload limit is separate from the token context window and can lock you out of a session entirely.
 
-The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`.
+The session-start hook **reclaims the statusline** if another tool overwrites it, logging a warning and notifying the user via `additionalContext`. The notice names `/cg:config statusline external`, which stops the reclaim.
+
+#### Using another status line tool
+
+Claude Code runs one status line command. To combine Context Guardian with other segments, for example in [ccstatusline](https://github.com/sirmalloc/ccstatusline):
+
+1. Run `/cg:config statusline external`. Session start then leaves `statusLine` in `settings.json` alone.
+2. Make your tool run `node ~/.claude/cg/statusline.mjs` with Claude Code's status line JSON on stdin. In ccstatusline, that is a Custom Command widget; turn on "preserve colors" to keep CG's colors.
+
+Session start rewrites `~/.claude/cg/statusline.mjs` to point at the installed version, so the command keeps working after updates. There is one launcher for all sessions: if two copies of CG are loaded, for example an installed one and a `--plugin-dir` one, the copy whose session started last owns it. `~/.claude/logs/cg.log` records each change of target as `statusline-launcher: wrote …`. CG's statusline script must run: it is the only part of CG that receives the real context window size and model. `/cg:stats` diagnostics report a failure in external mode when it has not run in the current session, or when no session id reaches the check, because only the current session's state can prove it ran. If external mode finds no status line command at session start, in the user settings or the project's `.claude/settings.json` and `.claude/settings.local.json`, CG warns in the session. A status line set anywhere else, for example in managed settings or with `--settings`, still gets the warning; you can ignore it then.
 
 ### Model & Token Limit Detection
 
@@ -289,7 +299,7 @@ All persistent data lives in the plugin's data directory (`${CLAUDE_PLUGIN_DATA}
 
 | File | Purpose |
 |------|---------|
-| `config.json` | Threshold and max_tokens override |
+| `config.json` | Threshold and max_tokens override, statusline mode |
 | `state-{session_id}.json` | Latest token counts, payload bytes, model, transcript path (session-scoped) |
 | `checkpoints/` | Saved compaction checkpoints (markdown) |
 | `synthetic-sessions.json` | Manifest tracking synthetic JSONL sessions for `/resume` |

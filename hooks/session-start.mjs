@@ -2,11 +2,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { statuslineMode } from "../lib/config.mjs";
 import { log } from "../lib/logger.mjs";
 import {
 	atomicWriteFileSync,
 	resolveDataDir,
 	STATUSLINE_STATE_DIR,
+	statuslineLauncherFile,
 } from "../lib/paths.mjs";
 
 let input;
@@ -90,24 +93,83 @@ try {
 	log(`self-heal-error: ${e.message}`);
 }
 
+const pluginRoot =
+	process.env.CLAUDE_PLUGIN_ROOT ||
+	path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// ---------------------------------------------------------------------------
+// Stable statusline launcher — ~/.claude/cg/statusline.mjs imports the current
+// version's script, so tools that run CG's statusline (statusline: "external")
+// keep working across plugin updates. Its name ends in statusline.mjs, so the
+// script's own CLI check still runs it.
+// ---------------------------------------------------------------------------
+try {
+	const launcher = statuslineLauncherFile();
+	const target = pathToFileURL(path.join(pluginRoot, "lib", "statusline.mjs"));
+	// The target can disappear (plugin uninstalled, a --plugin-dir copy deleted),
+	// so the launcher prints a hint instead of failing with an empty widget.
+	const content = [
+		"// Written by Context Guardian at session start. Do not edit.",
+		"try {",
+		`\tawait import(${JSON.stringify(target.href)});`,
+		"} catch {",
+		'\tprocess.stdout.write("Context Guardian: statusline launcher is out of date, start a new session");',
+		"}",
+		"",
+	].join("\n");
+	let current = null;
+	try {
+		current = fs.readFileSync(launcher, "utf8");
+	} catch {}
+	if (current !== content) {
+		fs.mkdirSync(path.dirname(launcher), { recursive: true });
+		atomicWriteFileSync(launcher, content);
+		log(`statusline-launcher: wrote ${launcher} -> ${target.href}`);
+	}
+} catch (e) {
+	log(`statusline-launcher-error: ${e.message}`);
+}
+
 // ---------------------------------------------------------------------------
 // Statusline dominance — the statusline is CG's primary UX for context
-// pressure. We ensure it's always configured and reclaim it if overwritten.
+// pressure. In managed mode we ensure it's always configured and reclaim it if
+// overwritten. In external mode another tool runs CG's statusline script
+// (through the launcher above), so settings.json is left alone.
 // Takes effect next session (Claude Code reads settings at startup, before hooks).
 // ---------------------------------------------------------------------------
 let statuslineReclaimed = false;
+let statuslineMissing = false;
 try {
 	const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
 	let settings = {};
 	if (fs.existsSync(settingsPath)) {
 		settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
 	}
-	const pluginRoot =
-		process.env.CLAUDE_PLUGIN_ROOT || path.resolve(import.meta.dirname, "..");
 	const statuslineCmd = `node ${pluginRoot}/lib/statusline.mjs`;
 	const isCG = settings.statusLine?.command?.includes("statusline.mjs");
 
-	if (!settings.statusLine) {
+	if (statuslineMode() === "external") {
+		log("statusline-external: leaving statusLine in settings.json unchanged");
+		// Claude Code also reads statusLine from the project's shared and local
+		// settings, so the warning fires only when none of the three sets one.
+		const projectSettings = input.cwd
+			? [
+					path.join(input.cwd, ".claude", "settings.json"),
+					path.join(input.cwd, ".claude", "settings.local.json"),
+				]
+			: [];
+		statuslineMissing =
+			!settings.statusLine?.command &&
+			!projectSettings.some((file) => {
+				try {
+					return Boolean(
+						JSON.parse(fs.readFileSync(file, "utf8")).statusLine?.command,
+					);
+				} catch {
+					return false;
+				}
+			});
+	} else if (!settings.statusLine) {
 		// No statusline configured — set ours
 		settings.statusLine = { type: "command", command: statuslineCmd };
 		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -129,14 +191,21 @@ log(
 	`session-start session=${input.session_id || "unknown"} cwd=${input.cwd || "unknown"}`,
 );
 
-// Warn user if statusline was reclaimed from another tool
+// Warn user if statusline was reclaimed from another tool, or if external mode
+// is on but no status line command exists to run CG's script.
+let statuslineNotice = null;
 if (statuslineReclaimed) {
+	statuslineNotice =
+		"[Context Guardian] Statusline reclaimed — another tool had overwritten it. Takes effect next session. To run CG inside another status line tool instead, run /cg:config statusline external and set that tool up again.";
+} else if (statuslineMissing) {
+	statuslineNotice = `[Context Guardian] statusline is external, but no status line command is set, so context warnings are not shown. Make your status line tool run \`node ${statuslineLauncherFile()}\`, or run /cg:config statusline managed.`;
+}
+if (statuslineNotice) {
 	process.stdout.write(
 		JSON.stringify({
 			hookSpecificOutput: {
 				hookEventName: "SessionStart",
-				additionalContext:
-					"[Context Guardian] Statusline reclaimed — another tool had overwritten it. Takes effect next session.",
+				additionalContext: statuslineNotice,
 			},
 		}),
 	);
