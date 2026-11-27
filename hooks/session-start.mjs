@@ -138,6 +138,7 @@ try {
 // Takes effect next session (Claude Code reads settings at startup, before hooks).
 // ---------------------------------------------------------------------------
 let statuslineReclaimed = false;
+let statuslineMissing = false;
 try {
 	const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
 	let settings = {};
@@ -149,6 +150,7 @@ try {
 
 	if (statuslineMode() === "external") {
 		log("statusline-external: leaving statusLine in settings.json unchanged");
+		statuslineMissing = !settings.statusLine?.command;
 	} else if (!settings.statusLine) {
 		// No statusline configured — set ours
 		settings.statusLine = { type: "command", command: statuslineCmd };
@@ -171,14 +173,21 @@ log(
 	`session-start session=${input.session_id || "unknown"} cwd=${input.cwd || "unknown"}`,
 );
 
-// Warn user if statusline was reclaimed from another tool
+// Warn user if statusline was reclaimed from another tool, or if external mode
+// is on but no status line command exists to run CG's script.
+let statuslineNotice = null;
 if (statuslineReclaimed) {
+	statuslineNotice =
+		"[Context Guardian] Statusline reclaimed — another tool had overwritten it. Takes effect next session. To run CG inside another status line tool instead, run /cg:config statusline external and set that tool up again.";
+} else if (statuslineMissing) {
+	statuslineNotice = `[Context Guardian] statusline is external, but no status line command is set, so context warnings are not shown. Make your status line tool run \`node ${statuslineLauncherFile()}\`, or run /cg:config statusline managed.`;
+}
+if (statuslineNotice) {
 	process.stdout.write(
 		JSON.stringify({
 			hookSpecificOutput: {
 				hookEventName: "SessionStart",
-				additionalContext:
-					"[Context Guardian] Statusline reclaimed — another tool had overwritten it. Takes effect next session. To run CG inside another status line tool instead, run /cg:config statusline external and set that tool up again.",
+				additionalContext: statuslineNotice,
 			},
 		}),
 	);

@@ -105,11 +105,20 @@ describe("session-start statusline — external mode", () => {
 		assert.equal(stdout, "");
 	});
 
-	it("does not add a statusline when none is set", () => {
+	it("does not add a statusline when none is set, and warns the session", () => {
 		setMode("external");
 		writeSettings({});
-		runHook();
+		const stdout = runHook();
 		assert.equal(readSettings().statusLine, undefined);
+		const notice = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+		assert.match(notice, /statusline is external, but no status line command/);
+		assert.ok(notice.includes(path.join(stateDir, "statusline.mjs")), notice);
+	});
+
+	it("warns when settings.json does not exist at all", () => {
+		setMode("external");
+		const stdout = runHook();
+		assert.match(stdout, /no status line command is set/);
 	});
 });
 
